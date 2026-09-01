@@ -1,7 +1,9 @@
 'use client';
 
+import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { loginUser, registerUser } from '@/lib/authService';
+import { getSession, saveSession } from '@/lib/session';
 import AuthInput from './AuthInput';
 import BrandPanel from './BrandPanel';
 import Notification from './Notification';
@@ -31,6 +33,7 @@ const SUBMIT_BUTTON_CLASSES =
  * Data operations are delegated to lib/authService.js ("Loging Table").
  */
 export default function AuthCard() {
+  const router = useRouter();
   const [mode, setMode] = useState('login'); // 'login' | 'register'
   const [username, setUsername] = useState('');
   const [department, setDepartment] = useState('');
@@ -44,6 +47,11 @@ export default function AuthCard() {
     const timer = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Already signed in? Skip the login screen entirely.
+  useEffect(() => {
+    if (getSession()) router.replace('/dashboard');
+  }, [router]);
 
   const notify = useCallback((type, title, message = '') => {
     setToast({ id: Date.now(), type, title, message });
@@ -73,12 +81,15 @@ export default function AuthCard() {
     const result = await loginUser({ username, password });
     setLoading(false);
     if (result.ok) {
+      saveSession(result.user);
       notify(
         'success',
         'Login successful',
-        `Welcome back, ${result.user.username}! You are signed in as ${result.user.department}.`
+        `Welcome back, ${result.user.username}! Taking you to your dashboard...`
       );
       setPassword('');
+      // Brief pause so the success state is visible, then enter the shell.
+      setTimeout(() => router.push('/dashboard'), 700);
     } else {
       notify('error', 'Login failed', result.message);
     }

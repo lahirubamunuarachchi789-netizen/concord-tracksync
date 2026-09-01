@@ -9,7 +9,9 @@ Built with **Next.js 15 (App Router) + Tailwind CSS + Supabase**.
 - Smooth animated **Sign In / Register** toggle (sliding pill indicator + fade/slide forms)
 - **Register**: collects `Username`, `Department`, `Password` and inserts into the Supabase `Loging Table` (duplicate usernames blocked)
 - **Login**: queries `Loging Table` to validate credentials, with success/error toast notifications
-- Configuration is read **dynamically and safely** from environment variables (no hard-coded credentials)
+- **Post-login app shell**: collapsible sidebar (Home / Dashboard / Transactions / Reports / Stock), sticky header with user profile & logout, gradient welcome hero and KPI dashboard
+- **Route protection**: `middleware.js` guards protected sections with the `tracksync_auth` cookie, backed by a client-side session check in the shell
+- Configuration is read **dynamically and safely** from environment variables, with built-in publishable fallbacks
 - Password visibility toggle, loading states, mobile-friendly layout
 
 ## Getting started
@@ -55,21 +57,37 @@ the publishable key so registration and login work from the browser.
 
 ```
 ├── app/
-│   ├── globals.css          # Tailwind + base styles
-│   ├── layout.js            # Root layout & metadata
-│   └── page.js              # Renders the auth screen
+│   ├── globals.css           # Tailwind + base styles
+│   ├── layout.js             # Root layout & metadata
+│   ├── page.js               # Login / register screen
+│   └── (main)/               # Protected post-login area (route group)
+│       ├── layout.js         # App shell: sidebar + header + auth gate
+│       ├── home/page.js      # Welcome hero + quick links
+│       ├── dashboard/        # KPI cards, output chart, activity feed
+│       ├── transactions/     # Module scaffold
+│       ├── reports/          # Module scaffold
+│       └── stock/            # Module scaffold
 ├── components/
-│   ├── AuthCard.jsx         # Split-screen auth UI, toggle, form state
-│   ├── AuthInput.jsx        # Input / select / suggestion-combo field
-│   ├── BrandPanel.jsx       # Left gradient panel
-│   ├── Notification.jsx     # Toast status notifications
-│   └── icons.jsx            # Inline SVG icons (no extra deps)
+│   ├── AppShell.jsx          # Auth gate + session context + shell layout
+│   ├── Sidebar.jsx           # Collapsible / mobile drawer navigation
+│   ├── DashboardHeader.jsx   # Top bar: title, user profile, logout
+│   ├── HomeGreeting.jsx      # Gradient welcome hero
+│   ├── PageHeader.jsx        # Shared section heading
+│   ├── StatCard.jsx          # KPI metric card
+│   ├── EmptyState.jsx        # Themed "coming soon" module panel
+│   ├── AuthCard.jsx          # Split-screen auth UI, toggle, form state
+│   ├── AuthInput.jsx         # Input / select / suggestion-combo field
+│   ├── BrandPanel.jsx        # Left gradient panel
+│   ├── Notification.jsx      # Toast status notifications
+│   └── icons.jsx             # Inline SVG icons (no extra deps)
 ├── lib/
-│   ├── supabaseClient.js    # Safe dynamic init from env vars (singleton)
-│   └── authService.js       # loginUser() / registerUser() on "Loging Table"
-├── supabase/schema.sql      # Table + RLS policies
-├── .env                     # Supabase credentials (git-ignored)
-└── .env.example             # Template for new machines
+│   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
+│   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
+│   └── session.js            # Client session store + auth cookie
+├── middleware.js             # Route protection for the protected sections
+├── supabase/schema.sql       # Table + RLS policies
+├── .env                      # Supabase credentials (git-ignored)
+└── .env.example              # Template for new machines
 ```
 
 ## Security notes (please read)
