@@ -48,7 +48,7 @@ export default function PoSelect({ value, onChange, notify }) {
       const raw = String(err?.message || err || '');
       setLoadError(
         /does not exist|PGRST205|relation/i.test(raw)
-          ? 'The purchase_orders table is not reachable yet - run supabase/qr-activation-schema.sql.'
+          ? 'The PO table is not reachable yet - run supabase/qr-activation-schema.sql in the Supabase SQL Editor.'
           : raw || 'Could not load the PO list.'
       );
     } finally {
@@ -93,7 +93,7 @@ export default function PoSelect({ value, onChange, notify }) {
       setPos((prev) => [...prev, result.po].sort((a, b) => a.localeCompare(b)));
       onChange(result.po);
       setModalOpen(false);
-      notify('success', 'PO added', `${result.po} saved to purchase_orders.`);
+      notify('success', 'PO added', `${result.po} saved to the PO table.`);
     } else {
       notify('error', result.duplicate ? 'Duplicate PO' : 'Could not add PO', result.error);
     }
@@ -112,7 +112,7 @@ export default function PoSelect({ value, onChange, notify }) {
     if (result.ok) {
       setPos((prev) => prev.filter((p) => p !== value));
       onChange('');
-      notify('success', 'PO deleted', `${value} removed from purchase_orders.`);
+      notify('success', 'PO deleted', `${value} removed from the PO table.`);
     } else {
       notify('error', 'Could not delete PO', result.error);
     }
@@ -245,7 +245,7 @@ function AddPoModal({ draft, onDraftChange, saving, onSubmit, onClose }) {
             <div>
               <h3 className="text-base font-extrabold text-slate-900">Add purchase order</h3>
               <p className="mt-0.5 text-xs text-slate-400">
-                Saved straight into the Supabase purchase_orders table.
+                Saved straight into the Supabase PO table.
               </p>
             </div>
             <button
