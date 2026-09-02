@@ -45,6 +45,26 @@ export default function ActivationSummary({
             </dd>
           </div>
           <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-400">Record status</dt>
+            <dd>
+              {params.record ? (
+                <StatusChip tone="emerald">{params.record}</StatusChip>
+              ) : (
+                <span className="text-slate-300">Not selected</span>
+              )}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
+            <dt className="text-slate-400">QC status</dt>
+            <dd>
+              {params.qc ? (
+                <StatusChip tone="amber">{params.qc}</StatusChip>
+              ) : (
+                <span className="text-slate-300">Not selected</span>
+              )}
+            </dd>
+          </div>
+          <div className="flex items-center justify-between gap-3">
             <dt className="text-slate-400">Activated by</dt>
             <dd className="truncate font-medium text-slate-700">
               {user?.username || '-'}
@@ -52,7 +72,7 @@ export default function ActivationSummary({
             </dd>
           </div>
         </dl>
-        {params.po && params.size ? (
+        {params.po && params.size && params.record && params.qc ? (
           <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100">
             Both parameters are locked. Every scan auto-activates with this combination.
           </p>
@@ -113,6 +133,10 @@ export default function ActivationSummary({
                   <p className="mt-1 flex flex-wrap items-center gap-1.5">
                     <StatusChip tone="indigo">{row.po}</StatusChip>
                     <StatusChip tone="purple">Size {row.size}</StatusChip>
+                    {row.record_status ? (
+                      <StatusChip tone="emerald">{row.record_status}</StatusChip>
+                    ) : null}
+                    {row.qc_status ? <StatusChip tone="amber">{row.qc_status}</StatusChip> : null}
                     <span className="text-[11px] text-slate-400">
                       {new Date(row.created_at).toLocaleTimeString([], {
                         hour: '2-digit',

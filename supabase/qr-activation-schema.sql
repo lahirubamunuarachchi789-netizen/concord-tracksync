@@ -1,7 +1,7 @@
 -- ============================================================
 -- Concord TrackSync - Supabase schema for QR Activation
 -- Tables: "PO" (column `PO`)      - the live PO list table
---         qr_activations          - scan + PO + size records
+--         qr_activations          - scans with PO, size & record/QC status
 -- Run in: Supabase Dashboard -> SQL Editor
 --
 -- This script is idempotent: run it to guarantee the table
@@ -22,17 +22,24 @@ create table if not exists "PO" (
 -- is enforced in the UI; the DB enforces exact uniqueness).
 create unique index if not exists po_value_key on "PO" ("PO");
 
--- 2. QR activations (auto-submitted scans)
+-- 2. QR activations (auto-submitted scans: qr + PO + size + statuses)
 create table if not exists qr_activations (
-  id         uuid primary key default gen_random_uuid(),
-  qr_value   text not null,
-  po         text not null,
-  size       integer not null check (size between 35 and 50),
-  username   text not null,
-  department text not null,
-  client_ref text not null,
-  created_at timestamptz not null default now()
+  id            uuid primary key default gen_random_uuid(),
+  qr_value      text not null,
+  po            text not null,
+  size          integer not null check (size between 35 and 50),
+  record_status text not null check (record_status in ('IN', 'OUT')),
+  qc_status     text not null check (qc_status in
+                   ('Forward', 'B Grade', 'C Grade', 'Lab Testing', 'Return', 'Reworked')),
+  username      text not null,
+  department    text not null,
+  client_ref    text not null,
+  created_at    timestamptz not null default now()
 );
+
+-- Upgrade path for tables created before the status columns existed.
+alter table qr_activations add column if not exists record_status text;
+alter table qr_activations add column if not exists qc_status     text;
 
 create index if not exists qr_activations_created_idx
   on qr_activations (created_at desc);

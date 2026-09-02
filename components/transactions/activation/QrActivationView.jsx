@@ -16,6 +16,7 @@ import { useSession } from '@/components/AppShell';
 import GunScannerInput from '../GunScannerInput';
 import ScanMethodToggle from '../ScanMethodToggle';
 import ScanPreview from '../ScanPreview';
+import StatusControls from '../StatusControls';
 import ActivationSummary from './ActivationSummary';
 import PoSelect from './PoSelect';
 import SizeSelect from './SizeSelect';
@@ -45,8 +46,9 @@ export default function QrActivationView() {
   // open, so typing goes to the modal input instead of the scan field.
   const [scanPaused, setScanPaused] = useState(false);
   const handleModalOpenChange = useCallback((open) => setScanPaused(Boolean(open)), []);
-  // Locked scan parameters: PO + size persist across scans AND reloads.
-  const [params, setParams] = useState({ po: '', size: '' });
+  // Locked scan parameters: PO, size and record/QC statuses persist
+  // across scans AND reloads until the user manually changes them.
+  const [params, setParams] = useState({ po: '', size: '', record: '', qc: '' });
   const [lastScan, setLastScan] = useState(null);
   const [attention, setAttention] = useState(false);
   const [pending, setPending] = useState(0);
@@ -78,7 +80,9 @@ export default function QrActivationView() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(PARAMS_KEY) || '{}');
-      if (saved.po || saved.size) setParams((prev) => ({ ...prev, ...saved }));
+      if (saved.po || saved.size || saved.record || saved.qc) {
+        setParams((prev) => ({ ...prev, ...saved }));
+      }
     } catch {
       /* ignore corrupt storage */
     }
@@ -142,28 +146,33 @@ export default function QrActivationView() {
       const prev = lastScanRef.current;
       if (prev?.value === code && at - prev.at < 1500) return;
 
-      const { po, size } = paramsRef.current;
-      if (!po || !size) {
-        // CRITICAL: never activate without both parameters - prompt instead.
+      const { po, size, record, qc } = paramsRef.current;
+      // CRITICAL: never activate with incomplete parameters - prompt instead.
+      const missing = [];
+      if (!po) missing.push('Purchase Order');
+      if (!size) missing.push('Size');
+      if (!record) missing.push('Record Status');
+      if (!qc) missing.push('QC Status');
+      if (missing.length > 0) {
         setAttention(true);
         window.setTimeout(() => setAttention(false), 2200);
         notify(
           'error',
           'Scan blocked',
-          'Select a Purchase Order and a Size first. They stay locked for every scan until you change them.'
+          `Missing: ${missing.join(', ')}. Locked selections apply to every scan until you change them.`
         );
         return;
       }
 
       setLastScan({ value: code, source, at, result: null });
-      autoActivate(code, po, size);
+      autoActivate(code, po, size, record, qc);
     },
     [notify]
   );
 
-  async function autoActivate(code, po, size) {
+  async function autoActivate(code, po, size, record, qc) {
     setPending((n) => n + 1);
-    const result = await createActivation(userRef.current, code, po, size);
+    const result = await createActivation(userRef.current, code, po, size, record, qc);
     setPending((n) => Math.max(0, n - 1));
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedActivationCount());
@@ -171,9 +180,17 @@ export default function QrActivationView() {
       prevScan && prevScan.value === code ? { ...prevScan, result: result.status } : prevScan
     );
     if (result.status === 'synced') {
-      notify('success', `Activated: ${code} | ${po} | Size ${size}`, 'Saved to Supabase.');
+      notify(
+        'success',
+        `Activated: ${code} | ${po} | Size ${size} | ${record} | ${qc}`,
+        'Saved to Supabase.'
+      );
     } else {
-      notify('info', `Activated on device: ${code} | ${po} | Size ${size}`, result.error);
+      notify(
+        'info',
+        `Activated on device: ${code} | ${po} | Size ${size} | ${record} | ${qc}`,
+        result.error
+      );
     }
   }
 
@@ -190,13 +207,13 @@ export default function QrActivationView() {
     );
   }
 
-  const ready = Boolean(params.po && params.size);
+  const ready = Boolean(params.po && params.size && params.record && params.qc);
 
   return (
     <div className="animate-fade-slide">
       <PageHeader
         title="QR Activation"
-        subtitle="Lock a PO and size once - every scan then activates instantly, hands-free"
+        subtitle="Lock PO, size & statuses once - every scan then activates instantly, hands-free"
       />
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-5">
@@ -231,6 +248,16 @@ export default function QrActivationView() {
             onChange={(size) => setParams((prev) => ({ ...prev, size }))}
           />
 
+          {/* Record & QC status - same components/styling as Standard
+              Transactions. Selections stay locked with the PO + size. */}
+          <StatusControls
+            recordStatus={params.record}
+            qcStatus={params.qc}
+            attention={attention}
+            onRecord={(record) => setParams((prev) => ({ ...prev, record }))}
+            onQc={(qc) => setParams((prev) => ({ ...prev, qc }))}
+          />
+
           {/* Workflow status strip: readiness + live activation indicator */}
           <div
             className={`flex flex-wrap items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-center text-sm font-semibold ring-1 transition ${
@@ -247,12 +274,13 @@ export default function QrActivationView() {
             ) : ready ? (
               <>
                 <CheckIcon className="h-4 w-4" />
-                Ready — locked: {params.po} · Size {params.size}. Every scan activates instantly.
+                Ready — locked: {params.po} · Size {params.size} · {params.record} ·{' '}
+                {params.qc}. Every scan activates instantly.
               </>
             ) : (
               <>
                 <AlertIcon className="h-4 w-4" />
-                Pre-select a Purchase Order and a Size to start scanning.
+                Pre-select a Purchase Order, Size, Record status and QC status to start scanning.
               </>
             )}
           </div>
