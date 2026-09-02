@@ -219,3 +219,57 @@ export function LayersIcon(props) {
     </IconBase>
   );
 }
+
+export function CameraIcon(props) {
+  return (
+    <IconBase {...props}>
+      <path d="M2 8.2A2.2 2.2 0 014.2 6h1.9c.66 0 1.27-.3 1.68-.8l.94-1.2c.41-.5 1.02-.8 1.68-.8h3.2c.66 0 1.27.3 1.68.8l.94 1.2c.41.5 1.02.8 1.68.8h1.9A2.2 2.2 0 0122 8.2v9.6a2.2 2.2 0 01-2.2 2.2H4.2A2.2 2.2 0 012 17.8V8.2z" />
+      <circle cx="12" cy="12.5" r="3.5" />
+    </IconBase>
+  );
+}
+
+export function QrCodeIcon(props) {
+  return (
+    <IconBase {...props}>
+      <rect x="3" y="3" width="7" height="7" rx="1.5" />
+      <rect x="14" y="3" width="7" height="7" rx="1.5" />
+      <rect x="3" y="14" width="7" height="7" rx="1.5" />
+      <path d="M14 14h3v3h-3zM19 19h2M14 20.5V21M20.5 14H21" />
+    </IconBase>
+  );
+}
+
+export function ScanLineIcon(props) {
+  return (
+    <IconBase {...props}>
+      <path d="M4 7V6a2 2 0 012-2h2M16 4h2a2 2 0 012 2v1M20 16v1a2 2 0 01-2 2h-2M8 19H6a2 2 0 01-2-2v-1" />
+      <path d="M7 12h10" />
+    </IconBase>
+  );
+}
+
+export function RefreshIcon(props) {
+  return (
+    <IconBase {...props}>
+      <path d="M20.5 12a8.5 8.5 0 11-2.49-6.01M20.5 3v4.5H16" />
+    </IconBase>
+  );
+}
+
+export function CheckIcon(props) {
+  return (
+    <IconBase {...props}>
+      <path d="M4.5 12.5l5 5L19.5 6.5" />
+    </IconBase>
+  );
+}
+
+export function XCircleIcon(props) {
+  return (
+    <IconBase {...props}>
+      <circle cx="12" cy="12" r="9" />
+      <path d="M15 9l-6 6M9 9l6 6" />
+    </IconBase>
+  );
+}

@@ -19,3 +19,26 @@ input:-webkit-autofill:focus {
   -webkit-box-shadow: 0 0 0px 1000px #ffffff inset;
   transition: background-color 5000s ease-in-out 0s;
 }
+
+/* ------------------------------------------------------------
+   html5-qrcode live view (Transactions -> Camera Scan)
+   The library injects <video> + <canvas>; normalize it to fill
+   the dark rounded panel with the scan frame overlay on top.
+   ------------------------------------------------------------ */
+.tracksync-qr-video {
+  position: relative;
+  width: 100%;
+  min-height: 300px;
+}
+
+.tracksync-qr-video video {
+  display: block;
+  width: 100% !important;
+  height: 300px !important;
+  object-fit: cover;
+}
+
+/* Hide the library's redundant edge border so the themed frame shows */
+.tracksync-qr-video [id*='__qr_reader'] {
+  border: none !important;
+}

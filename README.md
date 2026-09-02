@@ -64,7 +64,7 @@ the publishable key so registration and login work from the browser.
 │       ├── layout.js         # App shell: sidebar + header + auth gate
 │       ├── home/page.js      # Welcome hero + quick links
 │       ├── dashboard/        # KPI cards, output chart, activity feed
-│       ├── transactions/     # Module scaffold
+│       ├── transactions/     # Dual QR scanning + status recording (live)
 │       ├── reports/          # Module scaffold
 │       └── stock/            # Module scaffold
 ├── components/
@@ -79,13 +79,24 @@ the publishable key so registration and login work from the browser.
 │   ├── AuthInput.jsx         # Input / select / suggestion-combo field
 │   ├── BrandPanel.jsx        # Left gradient panel
 │   ├── Notification.jsx      # Toast status notifications
-│   └── icons.jsx             # Inline SVG icons (no extra deps)
+│   ├── icons.jsx             # Inline SVG icons (no extra deps)
+│   └── transactions/         # Transactions module components
+│       ├── TransactionsView.jsx   # State hub: scan -> status -> record
+│       ├── ScanMethodToggle.jsx   # Camera vs scanner-gun selector
+│       ├── CameraScanner.jsx      # html5-qrcode live camera wrapper
+│       ├── GunScannerInput.jsx    # USB/BT scanner-gun keystroke capture
+│       ├── ScanPreview.jsx        # Scanned-code preview card
+│       ├── StatusControls.jsx     # IN/OUT + QC status button grid
+│       ├── TransactionSummary.jsx # Pending record + session log
+│       └── LockIcon.jsx           # Small inline lock glyph
 ├── lib/
 │   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
 │   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
+│   ├── transactionsService.js # Insert/queue/read on "Transactions"
 │   └── session.js            # Client session store + auth cookie
 ├── middleware.js             # Route protection for the protected sections
-├── supabase/schema.sql       # Table + RLS policies
+├── supabase/schema.sql       # "Loging Table" + RLS policies
+├── supabase/transactions-schema.sql # "Transactions" table + RLS policies
 ├── .env                      # Supabase credentials (git-ignored)
 └── .env.example              # Template for new machines
 ```
