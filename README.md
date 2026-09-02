@@ -105,7 +105,7 @@ the publishable key so registration and login work from the browser.
 ├── middleware.js             # Route protection for the protected sections
 ├── supabase/schema.sql       # "Loging Table" + RLS policies
 ├── supabase/transactions-schema.sql # "Transactions" table + RLS policies
-├── supabase/qr-activation-schema.sql # "PO" + qr_activations + RLS
+├── supabase/qr-activation-schema.sql # "PO" + pod MQC + data_updates + RLS
 ├── .env                      # Supabase credentials (git-ignored)
 └── .env.example              # Template for new machines
 ```

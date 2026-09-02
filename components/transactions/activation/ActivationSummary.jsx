@@ -124,26 +124,38 @@ export default function ActivationSummary({
               Activated QR codes will appear here.
             </p>
           ) : (
-            history.map((row) => (
-              <div key={row.client_ref} className="flex items-start gap-3 px-5 py-3.5">
+            history.map((row, index) => (
+              <div
+                key={row.id ?? `${row.created_at}-${index}`}
+                className="flex items-start gap-3 px-5 py-3.5"
+              >
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-mono text-sm font-semibold text-slate-900">
-                    {row.qr_value}
+                    {row.qr_code}
                   </p>
                   <p className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <StatusChip tone="indigo">{row.po}</StatusChip>
-                    <StatusChip tone="purple">Size {row.size}</StatusChip>
                     {row.record_status ? (
                       <StatusChip tone="emerald">{row.record_status}</StatusChip>
                     ) : null}
                     {row.qc_status ? <StatusChip tone="amber">{row.qc_status}</StatusChip> : null}
+                    {row.count != null ? (
+                      <span
+                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                          row.count < 0
+                            ? 'bg-red-50 text-red-600 ring-red-100'
+                            : 'bg-slate-50 text-slate-600 ring-slate-200'
+                        }`}
+                      >
+                        {row.count > 0 ? `+${row.count}` : row.count}
+                      </span>
+                    ) : null}
                     <span className="text-[11px] text-slate-400">
                       {new Date(row.created_at).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
                       {' · '}
-                      {row.username}
+                      {row.created_by}
                     </span>
                   </p>
                 </div>

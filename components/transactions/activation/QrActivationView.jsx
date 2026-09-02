@@ -183,13 +183,13 @@ export default function QrActivationView() {
       notify(
         'success',
         `Activated: ${code} | ${po} | Size ${size} | ${record} | ${qc}`,
-        'Saved to Supabase.'
+        `${result.qrCode}${result.mqc ? ` · MQC ${result.mqc}` : ' · MQC not found'} - saved to data_updates.`
       );
     } else {
       notify(
         'info',
         `Activated on device: ${code} | ${po} | Size ${size} | ${record} | ${qc}`,
-        result.error
+        `${result.qrCode} · ${result.error}`
       );
     }
   }

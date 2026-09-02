@@ -1,17 +1,17 @@
 -- ============================================================
 -- Concord TrackSync - Supabase schema for QR Activation
--- Tables: "PO" (column `PO`)      - the live PO list table
---         qr_activations          - scans with PO, size & record/QC status
+-- Tables: "PO"          (column `PO`) - live PO list table
+--         pod           (po, mqc, size) - MQC lookup per PO/size
+--         data_updates  - auto-submitted activation records
 -- Run in: Supabase Dashboard -> SQL Editor
 --
--- This script is idempotent: run it to guarantee the table
--- shapes and to add the RLS policies below if missing.
+-- Verified live on 2026-09-02: "PO", "pod" and "data_updates"
+-- all exist. This script is idempotent - it only guarantees the
+-- RLS setup the browser client needs; the create-if-missing DDL
+-- is for fresh projects and never alters the existing tables.
 -- ============================================================
 
 -- 1. PO list (shown in the activation dropdown)
---    Verified live on 2026-09-02: the "PO" table already exists
---    with data (HTTP 200 via the publishable key, column "PO").
---    create-if-missing keeps fresh projects reproducible.
 create table if not exists "PO" (
   id         uuid primary key default gen_random_uuid(),
   "PO"       text not null,
@@ -22,33 +22,49 @@ create table if not exists "PO" (
 -- is enforced in the UI; the DB enforces exact uniqueness).
 create unique index if not exists po_value_key on "PO" ("PO");
 
--- 2. QR activations (auto-submitted scans: qr + PO + size + statuses)
-create table if not exists qr_activations (
-  id            uuid primary key default gen_random_uuid(),
-  qr_value      text not null,
-  po            text not null,
-  size          integer not null check (size between 35 and 50),
-  record_status text not null check (record_status in ('IN', 'OUT')),
-  qc_status     text not null check (qc_status in
-                   ('Forward', 'B Grade', 'C Grade', 'Lab Testing', 'Return', 'Reworked')),
-  username      text not null,
-  department    text not null,
-  client_ref    text not null,
-  created_at    timestamptz not null default now()
+-- 2. pod - MQC lookup (read-only for the app).
+--    Live shape: po text, mqc text, size (one row per PO/size).
+--    The app queries: select mqc where po = [selected PO]
+--    (preferring a po + size match) when building the qr_code.
+create table if not exists pod (
+  id    uuid primary key default gen_random_uuid(),
+  po    text not null,
+  mqc   text,
+  size  text,
+  created_at timestamptz not null default now()
 );
 
--- Upgrade path for tables created before the status columns existed.
-alter table qr_activations add column if not exists record_status text;
-alter table qr_activations add column if not exists qc_status     text;
+-- 3. data_updates - activation records written on every scan.
+--    Live shape (verified with a real insert + cleanup):
+--      id           serial primary key
+--      qr_code      text   ";mqc;po;size;scanned;"
+--      record_status text  (IN | OUT)
+--      qc_status    text   (Forward | B Grade | C Grade |
+--                           Lab Testing | Return | Reworked)
+--      created_at   timestamptz (scan time)
+--      department   text   (logged-in user's department)
+--      count        integer (-1 when qc_status = 'Return', else 1)
+--      created_by   text   (logged-in user's username)
+create table if not exists data_updates (
+  id            serial primary key,
+  qr_code       text not null,
+  record_status text,
+  qc_status     text,
+  created_at    timestamptz not null default now(),
+  department    text,
+  count         integer not null default 1,
+  created_by    text
+);
 
-create index if not exists qr_activations_created_idx
-  on qr_activations (created_at desc);
+create index if not exists data_updates_created_idx
+  on data_updates (created_at desc);
 
--- 3. Row Level Security
-alter table "PO" enable row level security;
-alter table qr_activations  enable row level security;
+-- 4. Row Level Security
+alter table "PO"          enable row level security;
+alter table pod           enable row level security;
+alter table data_updates  enable row level security;
 
--- 4. Policies for the browser client (publishable/anon key)
+-- 5. Policies for the browser client (publishable/anon key)
 drop policy if exists "tracksync_po_select" on "PO";
 create policy "tracksync_po_select"
   on "PO" for select
@@ -67,23 +83,34 @@ create policy "tracksync_po_delete"
   to anon, authenticated
   using (true);
 
-drop policy if exists "tracksync_act_insert" on qr_activations;
-create policy "tracksync_act_insert"
-  on qr_activations for insert
+-- pod: read-only (MQC lookup)
+drop policy if exists "tracksync_pod_select" on pod;
+create policy "tracksync_pod_select"
+  on pod for select
+  to anon, authenticated
+  using (true);
+
+-- data_updates: the floor app inserts scans and reads them back
+-- for the on-screen log. No delete/update by design.
+drop policy if exists "tracksync_du_insert" on data_updates;
+create policy "tracksync_du_insert"
+  on data_updates for insert
   to anon, authenticated
   with check (true);
 
-drop policy if exists "tracksync_act_select" on qr_activations;
-create policy "tracksync_act_select"
-  on qr_activations for select
+drop policy if exists "tracksync_du_select" on data_updates;
+create policy "tracksync_du_select"
+  on data_updates for select
   to anon, authenticated
   using (true);
 
 -- ============================================================
 -- NOTES
---  * "client_ref" is a browser-generated UUID so a sync retry
---    can never double-insert the same activation.
---  * Until this script is run the app still works: activations
---    queue in localStorage and sync automatically once the
---    tables exist. The PO list simply starts empty.
+--  * qr_code format: ";mqc;po;size;scanned;" - when the PO has no
+--    matching row in pod (or pod is unreachable) the MQC part is
+--    empty, keeping the structure: ";;po;size;scanned;".
+--  * count = -1 marks QC 'Return' records; every other QC status
+--    writes count = 1.
+--  * If the browser is offline the scan is queued in localStorage
+--    and synced automatically once connectivity returns.
 -- ============================================================
