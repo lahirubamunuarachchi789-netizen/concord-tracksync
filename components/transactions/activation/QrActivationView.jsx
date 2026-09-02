@@ -22,6 +22,9 @@ import PoSelect from './PoSelect';
 import SizeSelect from './SizeSelect';
 import {
   createActivation,
+  evaluateCutQtyLimit,
+  fetchCutQtyForPoSize,
+  getActivatedCountSum,
   getQueuedActivationCount,
   getRecentActivations,
   retryQueuedActivations,
@@ -52,6 +55,8 @@ export default function QrActivationView() {
   const [lastScan, setLastScan] = useState(null);
   const [attention, setAttention] = useState(false);
   const [pending, setPending] = useState(0);
+  // Latest cut_qty guard verdict (sum / limit / projected) for the summary.
+  const [limitInfo, setLimitInfo] = useState(null);
   const [history, setHistory] = useState([]);
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
@@ -164,11 +169,41 @@ export default function QrActivationView() {
         return;
       }
 
-      setLastScan({ value: code, source, at, result: null });
-      autoActivate(code, po, size, record, qc);
+      // cut_qty limit guard runs before any insert; on success the
+      // record is inserted exactly as before.
+      validateAndActivate(code, source, at, po, size, record, qc);
     },
     [notify]
   );
+
+  /**
+   * Validates the scan against the pod cut_qty limit, then activates.
+   * projected_total = current_sum(count) + scanCount(1, or -1 for Return);
+   * blocked completely (no write, amber flash, explicit toast) when the
+   * projected total would exceed cut_qty.
+   */
+  async function validateAndActivate(code, source, at, po, size, record, qc) {
+    const scanCount = qc === 'Return' ? -1 : 1;
+    const [cutQty, currentSum] = await Promise.all([
+      fetchCutQtyForPoSize(po, size),
+      getActivatedCountSum(po, size),
+    ]);
+    const verdict = evaluateCutQtyLimit(currentSum, cutQty, scanCount);
+    setLimitInfo(verdict);
+    if (!verdict.allowed) {
+      // Blocked: nothing is written - flash the form and warn loudly.
+      setAttention(true);
+      window.setTimeout(() => setAttention(false), 2200);
+      notify(
+        'error',
+        'Scan blocked — Exceeds Cut Qty limit!',
+        `Current: ${verdict.currentSum}, Cut Qty: ${verdict.cutQty}. This scan was not saved.`
+      );
+      return;
+    }
+    setLastScan({ value: code, source, at, result: null });
+    autoActivate(code, po, size, record, qc);
+  }
 
   async function autoActivate(code, po, size, record, qc) {
     setPending((n) => n + 1);
@@ -296,6 +331,7 @@ export default function QrActivationView() {
           <ActivationSummary
             user={user}
             params={params}
+            limitInfo={limitInfo}
             history={history}
             queuedCount={queuedCount}
             onRetrySync={handleRetrySync}

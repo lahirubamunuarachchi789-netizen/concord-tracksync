@@ -11,6 +11,7 @@ import { StatusChip } from '../TransactionSummary';
 export default function ActivationSummary({
   user,
   params,
+  limitInfo,
   history,
   queuedCount,
   onRetrySync,
@@ -74,9 +75,76 @@ export default function ActivationSummary({
         </dl>
         {params.po && params.size && params.record && params.qc ? (
           <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100">
-            Both parameters are locked. Every scan auto-activates with this combination.
+            All parameters are locked. Every scan auto-activates with this combination.
           </p>
         ) : null}
+      </section>
+
+      {/* Cut Qty limit guard - verdict of the most recent scan evaluation */}
+      <section
+        className={`rounded-2xl bg-white p-5 ring-1 transition ${
+          limitInfo && !limitInfo.allowed ? 'ring-2 ring-red-300' : 'ring-slate-200'
+        }`}
+      >
+        <header className="flex items-center justify-between">
+          <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+            Cut Qty limit
+          </h3>
+          {limitInfo ? (
+            limitInfo.allowed ? (
+              <StatusChip tone="emerald">
+                <CheckIcon className="h-3 w-3" /> Within limit
+              </StatusChip>
+            ) : (
+              <StatusChip tone="red">
+                <XCircleIcon className="h-3 w-3" /> Exceeded
+              </StatusChip>
+            )
+          ) : null}
+        </header>
+        {limitInfo ? (
+          <div className="mt-3 grid grid-cols-3 gap-2 text-center">
+            <div className="rounded-xl bg-slate-50 px-2 py-2.5 ring-1 ring-slate-100">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-slate-400">
+                Current
+              </p>
+              <p className="text-lg font-extrabold text-slate-800">{limitInfo.currentSum}</p>
+            </div>
+            <div className="rounded-xl bg-indigo-50 px-2 py-2.5 ring-1 ring-indigo-100">
+              <p className="text-[11px] font-semibold uppercase tracking-wide text-indigo-400">
+                Cut Qty
+              </p>
+              <p className="text-lg font-extrabold text-indigo-700">{limitInfo.cutQty ?? '—'}</p>
+            </div>
+            <div
+              className={`rounded-xl px-2 py-2.5 ring-1 ${
+                limitInfo.allowed
+                  ? 'bg-emerald-50 ring-emerald-100'
+                  : 'bg-red-50 ring-red-100'
+              }`}
+            >
+              <p
+                className={`text-[11px] font-semibold uppercase tracking-wide ${
+                  limitInfo.allowed ? 'text-emerald-500' : 'text-red-400'
+                }`}
+              >
+                After scan
+              </p>
+              <p
+                className={`text-lg font-extrabold ${
+                  limitInfo.allowed ? 'text-emerald-700' : 'text-red-600'
+                }`}
+              >
+                {limitInfo.projected}
+              </p>
+            </div>
+          </div>
+        ) : (
+          <p className="mt-3 text-xs leading-relaxed text-slate-400">
+            Every scan is checked against the pod cut_qty for the locked PO + size before it is
+            saved.
+          </p>
+        )}
       </section>
 
       {/* Queue health */}
