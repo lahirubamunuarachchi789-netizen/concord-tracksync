@@ -26,7 +26,7 @@ import {
 export const ACTIVE_CLS =
   'border-transparent bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 text-white shadow-lg shadow-indigo-600/25';
 
-export default function PoSelect({ value, onChange, notify }) {
+export default function PoSelect({ value, onChange, notify, onModalOpenChange }) {
   const [pos, setPos] = useState([]);
   const [loading, setLoading] = useState(true);
   const [loadError, setLoadError] = useState('');
@@ -75,6 +75,12 @@ export default function PoSelect({ value, onChange, notify }) {
     const timer = setTimeout(() => inputRef.current?.focus(), 50);
     return () => clearTimeout(timer);
   }, [modalOpen]);
+
+  // Report modal state so the parent can pause the global scanner-gun
+  // listener while the dialog is open (typing must reach this input).
+  useEffect(() => {
+    onModalOpenChange?.(modalOpen);
+  }, [modalOpen, onModalOpenChange]);
 
   /* --------------------------- actions --------------------------- */
 

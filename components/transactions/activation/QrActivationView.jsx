@@ -41,6 +41,10 @@ const PARAMS_KEY = 'tracksync.activationParams';
 export default function QrActivationView() {
   const user = useSession();
   const [method, setMethod] = useState('gun');
+  // Pauses the global scanner-gun listener while the Add PO modal is
+  // open, so typing goes to the modal input instead of the scan field.
+  const [scanPaused, setScanPaused] = useState(false);
+  const handleModalOpenChange = useCallback((open) => setScanPaused(Boolean(open)), []);
   // Locked scan parameters: PO + size persist across scans AND reloads.
   const [params, setParams] = useState({ po: '', size: '' });
   const [lastScan, setLastScan] = useState(null);
@@ -208,7 +212,7 @@ export default function QrActivationView() {
               {method === 'camera' ? (
                 <CameraScanner onScan={handleScan} />
               ) : (
-                <GunScannerInput onScan={handleScan} />
+                <GunScannerInput onScan={handleScan} paused={scanPaused} />
               )}
             </div>
           </section>
@@ -218,6 +222,7 @@ export default function QrActivationView() {
             value={params.po}
             onChange={(po) => setParams((prev) => ({ ...prev, po }))}
             notify={notify}
+            onModalOpenChange={handleModalOpenChange}
           />
 
           <SizeSelect

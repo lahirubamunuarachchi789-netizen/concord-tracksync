@@ -13,33 +13,51 @@ const MIN_LENGTH = 2;
 /** Average ms per character below which input is treated as a machine scan. */
 const SCAN_SPEED_THRESHOLD_MS = 35;
 
-export default function GunScannerInput({ onScan }) {
+export default function GunScannerInput({ onScan, paused = false }) {
   const inputRef = useRef(null);
   const [value, setValue] = useState('');
   const [listening, setListening] = useState(true);
   const [lastSource, setLastSource] = useState(null); // 'gun' | 'manual'
   const typingRef = useRef({ firstAt: 0, lastAt: 0 });
 
-  // Keep the field armed while listening.
+  // Fully armed only when the user hasn't manually paused AND no
+  // blocking dialog (e.g. the Add PO modal) is open. While a modal
+  // is open the global listener is disarmed so its text field owns
+  // the keystrokes.
+  const armed = listening && !paused;
+
+  // Keep the field armed while listening - and re-grab focus when
+  // re-armed (e.g. right after the Add PO modal closes).
   useEffect(() => {
-    if (listening) inputRef.current?.focus();
-  }, [listening]);
+    if (armed) inputRef.current?.focus();
+  }, [armed]);
 
   // Re-grab focus when the window regains focus (scanner stations).
   useEffect(() => {
     function handleFocus() {
-      if (listening) inputRef.current?.focus();
+      if (armed) inputRef.current?.focus();
     }
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
-  }, [listening]);
+  }, [armed]);
 
   // Global capture: while armed, route stray keystrokes into the field.
+  // Never hijacks keys when the user is typing in another editable
+  // element (modal inputs, selects, textareas) - belt and braces on
+  // top of the `paused` disarm.
   useEffect(() => {
-    if (!listening) return undefined;
+    if (!armed) return undefined;
     function handleKey(event) {
       const el = inputRef.current;
       if (!el || event.target === el) return;
+      const target = event.target;
+      const editable =
+        target instanceof HTMLElement &&
+        (target.isContentEditable ||
+          target.tagName === 'INPUT' ||
+          target.tagName === 'TEXTAREA' ||
+          target.tagName === 'SELECT');
+      if (editable) return;
       if (event.key.length === 1 && !event.ctrlKey && !event.metaKey && !event.altKey) {
         event.preventDefault();
         el.focus();
@@ -48,7 +66,7 @@ export default function GunScannerInput({ onScan }) {
     }
     document.addEventListener('keydown', handleKey);
     return () => document.removeEventListener('keydown', handleKey);
-  }, [listening]);
+  }, [armed]);
 
   function handleChange(event) {
     const now = performance.now();
@@ -79,17 +97,17 @@ export default function GunScannerInput({ onScan }) {
     <div className="flex flex-col gap-4">
       <div
         className={`relative rounded-2xl border-2 border-dashed p-4 transition ${
-          listening ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-200 bg-slate-50'
+          armed ? 'border-indigo-300 bg-indigo-50/50' : 'border-slate-200 bg-slate-50'
         }`}
       >
         <div className="flex items-center justify-between gap-2">
           <span className="inline-flex items-center gap-2 text-xs font-semibold uppercase tracking-wide text-slate-500">
             <span
               className={`h-2 w-2 rounded-full ${
-                listening ? 'animate-pulse bg-emerald-500' : 'bg-slate-300'
+                armed ? 'animate-pulse bg-emerald-500' : 'bg-slate-300'
               }`}
             />
-            {listening ? 'Listening for scanner' : 'Paused'}
+            {!listening ? 'Paused' : paused ? 'Paused - dialog open' : 'Listening for scanner'}
           </span>
           <button
             type="button"
@@ -106,7 +124,7 @@ export default function GunScannerInput({ onScan }) {
             ref={inputRef}
             type="text"
             value={value}
-            disabled={!listening}
+            disabled={!armed}
             onChange={handleChange}
             onKeyDown={(event) => {
               if (event.key === 'Enter') {
