@@ -3,12 +3,14 @@
 -- Tables: "PO"          (column `PO`) - live PO list table
 --         pod           (po, mqc, size) - MQC lookup per PO/size
 --         data_updates  - auto-submitted activation records
+--         msk           (id, msk_qr, org_qr) - duplicate guard
 -- Run in: Supabase Dashboard -> SQL Editor
 --
--- Verified live on 2026-09-02: "PO", "pod" and "data_updates"
--- all exist. This script is idempotent - it only guarantees the
--- RLS setup the browser client needs; the create-if-missing DDL
--- is for fresh projects and never alters the existing tables.
+-- Verified live on 2026-09-02: "PO", "pod", "data_updates" and
+-- "msk" all exist (msk is currently empty). This script is
+-- idempotent - it only guarantees the RLS setup the browser
+-- client needs; the create-if-missing DDL is for fresh projects
+-- and never alters the existing tables.
 -- ============================================================
 
 -- 1. PO list (shown in the activation dropdown)
@@ -59,12 +61,28 @@ create table if not exists data_updates (
 create index if not exists data_updates_created_idx
   on data_updates (created_at desc);
 
--- 4. Row Level Security
+-- 4. msk - duplicate activation guard (verified live: table exists).
+--    Exact shape: id, msk_qr, org_qr - the old `status` column is
+--    GONE and the app does not reference it.
+--      msk_qr = raw scanned QR value
+--      org_qr = formatted ";mqc;po;size;scanned;" string
+--    A scan whose formatted string already exists in org_qr is
+--    blocked before anything is written to either table.
+create table if not exists msk (
+  id     bigserial primary key,
+  msk_qr text,
+  org_qr text
+);
+
+create unique index if not exists msk_org_qr_key on msk (org_qr);
+
+-- 5. Row Level Security
 alter table "PO"          enable row level security;
 alter table pod           enable row level security;
 alter table data_updates  enable row level security;
+alter table msk           enable row level security;
 
--- 5. Policies for the browser client (publishable/anon key)
+-- 6. Policies for the browser client (publishable/anon key)
 drop policy if exists "tracksync_po_select" on "PO";
 create policy "tracksync_po_select"
   on "PO" for select
@@ -104,6 +122,21 @@ create policy "tracksync_du_select"
   to anon, authenticated
   using (true);
 
+-- msk: the duplicate guard is read on every scan and written on
+-- every valid activation. No delete/update from the browser by
+-- design (deactivating a QR is a manual DB operation).
+drop policy if exists "tracksync_msk_select" on msk;
+create policy "tracksync_msk_select"
+  on msk for select
+  to anon, authenticated
+  using (true);
+
+drop policy if exists "tracksync_msk_insert" on msk;
+create policy "tracksync_msk_insert"
+  on msk for insert
+  to anon, authenticated
+  with check (true);
+
 -- ============================================================
 -- NOTES
 --  * qr_code format: ";mqc;po;size;scanned;" - when the PO has no
@@ -111,6 +144,12 @@ create policy "tracksync_du_select"
 --    empty, keeping the structure: ";;po;size;scanned;".
 --  * count = -1 marks QC 'Return' records; every other QC status
 --    writes count = 1.
+--  * Duplicate prevention: before any write the app checks
+--    msk.org_qr for the formatted string - a match blocks the
+--    scan completely (nothing is written to data_updates or msk)
+--    and the worker sees a "QR code has already been activated"
+--    warning. The same check re-runs when flushing the offline
+--    queue, so a queued scan can never be written twice.
 --  * If the browser is offline the scan is queued in localStorage
 --    and synced automatically once connectivity returns.
 -- ============================================================

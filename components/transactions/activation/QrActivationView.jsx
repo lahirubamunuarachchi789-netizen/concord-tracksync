@@ -105,19 +105,25 @@ export default function QrActivationView() {
   /* ------------------------- initial load -------------------------- */
 
   const refresh = useCallback(async () => {
-    const { flushed } = await retryQueuedActivations();
+    const { flushed, skipped } = await retryQueuedActivations();
     const rows = await getRecentActivations(25);
     setHistory(rows);
     setQueuedCount(getQueuedActivationCount());
-    return flushed;
+    return { flushed, skipped };
   }, []);
 
   useEffect(() => {
     let cancelled = false;
     (async () => {
-      const flushed = await refresh();
-      if (!cancelled && flushed > 0) {
-        notify('success', 'Sync complete', `${flushed} offline activation(s) uploaded.`);
+      const { flushed, skipped } = await refresh();
+      if (!cancelled && (flushed > 0 || skipped > 0)) {
+        notify(
+          'success',
+          'Sync complete',
+          `${flushed} offline activation(s) uploaded${
+            skipped > 0 ? `, ${skipped} duplicate(s) skipped` : ''
+          }.`
+        );
       }
     })();
     return () => {
@@ -129,9 +135,17 @@ export default function QrActivationView() {
   useEffect(() => {
     async function retry() {
       setSyncing(true);
-      const flushed = await refresh();
+      const { flushed, skipped } = await refresh();
       setSyncing(false);
-      if (flushed > 0) notify('success', 'Back online', `${flushed} queued activation(s) synced.`);
+      if (flushed > 0 || skipped > 0) {
+        notify(
+          'success',
+          'Back online',
+          `${flushed} queued activation(s) synced${
+            skipped > 0 ? `, ${skipped} duplicate(s) skipped` : ''
+          }.`
+        );
+      }
     }
     window.addEventListener('online', retry);
     return () => window.removeEventListener('online', retry);
@@ -209,6 +223,21 @@ export default function QrActivationView() {
     setPending((n) => n + 1);
     const result = await createActivation(userRef.current, code, po, size, record, qc);
     setPending((n) => Math.max(0, n - 1));
+
+    if (result.status === 'duplicate') {
+      setLastScan((prevScan) =>
+        prevScan && prevScan.value === code ? { ...prevScan, result: 'duplicate' } : prevScan
+      );
+      setAttention(true);
+      window.setTimeout(() => setAttention(false), 2200);
+      notify(
+        'error',
+        'Scan blocked — QR code has already been activated!',
+        'Duplicate org_qr found. Nothing was written to data_updates or msk.'
+      );
+      return;
+    }
+
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedActivationCount());
     setLastScan((prevScan) =>
@@ -231,13 +260,15 @@ export default function QrActivationView() {
 
   async function handleRetrySync() {
     setSyncing(true);
-    const flushed = await refresh();
+    const { flushed, skipped } = await refresh();
     setSyncing(false);
     notify(
       'success',
       'Sync complete',
-      flushed > 0
-        ? `${flushed} queued activation(s) uploaded to Supabase.`
+      flushed > 0 || skipped > 0
+        ? `${flushed} queued activation(s) uploaded to Supabase${
+            skipped > 0 ? `, ${skipped} duplicate(s) skipped` : ''
+          }.`
         : 'All activations are already up to date.'
     );
   }
