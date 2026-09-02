@@ -83,7 +83,7 @@ the publishable key so registration and login work from the browser.
 │   ├── icons.jsx             # Inline SVG icons (no extra deps)
 │   └── transactions/         # Transactions module components
 │       ├── TransactionsTabs.jsx     # Tab switcher: Standard vs QR Activation
-│       ├── TransactionsView.jsx     # State hub: scan -> status -> record
+│       ├── TransactionsView.jsx     # Scan -> msk lookup -> data_updates record
 │       ├── activation/              # QR Activation window
 │       │   ├── QrActivationView.jsx # Locked PO+size, auto-activate on scan
 │       │   ├── PoSelect.jsx         # PO dropdown + Add modal + Delete (Supabase)
@@ -99,12 +99,12 @@ the publishable key so registration and login work from the browser.
 ├── lib/
 │   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
 │   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
-│   ├── transactionsService.js # Insert/queue/read on "Transactions"
+│   ├── transactionsService.js # msk lookup + data_updates insert/queue/read
 │   ├── qrActivationService.js # PO fetch/add/delete + activation insert/queue
 │   └── session.js            # Client session store + auth cookie
 ├── middleware.js             # Route protection for the protected sections
 ├── supabase/schema.sql       # "Loging Table" + RLS policies
-├── supabase/transactions-schema.sql # "Transactions" table + RLS policies
+├── supabase/transactions-schema.sql # msk mapping + data_updates (standard tx) + RLS
 ├── supabase/qr-activation-schema.sql # "PO" + pod MQC + data_updates + RLS
 ├── .env                      # Supabase credentials (git-ignored)
 └── .env.example              # Template for new machines

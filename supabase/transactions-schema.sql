@@ -1,48 +1,79 @@
 -- ============================================================
--- Concord TrackSync - Supabase schema for production transactions
--- Table: "Transactions" (scanned QR / barcode events)
--- Run in: Supabase Dashboard -> SQL Editor
---
--- This script is idempotent: run it to guarantee the table shape
--- and to add the RLS policies below if they are missing.
+-- Concord TrackSync - Supabase schema for STANDARD transactions
+-- Flow: scanned MSK QR -> msk lookup (msk_qr -> org_qr)
+--            -> data_updates insert (qr_code = resolved org_qr)
+-- Tables used: msk         (id, msk_qr, org_qr - NO status column)
+--              data_updates (shared with the QR Activation flow)
+-- Run in: Supabase Dashboard -> SQL Editor (idempotent)
 -- ============================================================
 
--- 1. Table (idempotent)
-create table if not exists "Transactions" (
-  "id"           uuid primary key default gen_random_uuid(),
-  "qr_value"     text not null,
-  "RecordStatus" text not null check ("RecordStatus" in ('IN', 'OUT')),
-  "QCStatus"     text not null check ("QCStatus" in
-                   ('Forward', 'B Grade', 'C Grade', 'Lab Testing', 'Return', 'Reworked')),
-  "Username"     text not null,
-  "Department"   text not null,
-  "client_ref"   text not null,
-  "created_at"   timestamptz not null default now()
+-- 1. msk mapping table (exact live shape; no "status" column)
+create table if not exists msk (
+  id     bigserial primary key,
+  msk_qr text not null,
+  org_qr text not null
 );
 
--- 2. Row Level Security
-alter table "Transactions" enable row level security;
+-- A scanned MSK QR must map to exactly one org QR.
+create unique index if not exists msk_msk_qr_key on msk (msk_qr);
 
--- 3. Policies for the browser client (publishable/anon key)
-drop policy if exists "tracksync_tx_insert" on "Transactions";
-create policy "tracksync_tx_insert"
-  on "Transactions"
-  for insert
+-- 2. Standard-transaction records (shared with QR Activation).
+--    The standard flow writes ONLY these columns:
+--      qr_code       = org_qr resolved from the msk table
+--      record_status = 'IN' | 'OUT'
+--      qc_status     = Forward | B Grade | C Grade | Lab Testing
+--                      | Return | Reworked
+--      created_at    = scan timestamp (now())
+--      department    = logged-in user's department
+--      count         = -1 when qc_status = 'Return', else 1
+--      created_by    = logged-in user's username
+create table if not exists data_updates (
+  id            bigserial primary key,
+  qr_code       text,
+  record_status text,
+  qc_status     text,
+  created_at    timestamptz,
+  department    text,
+  count         integer,
+  created_by    text
+);
+
+-- 3. Row Level Security
+alter table msk enable row level security;
+alter table data_updates enable row level security;
+
+-- 4. Policies for the browser client (publishable/anon key)
+--    a) msk: read-only - the lookup gate must never be writable
+--       from the scanner UI.
+drop policy if exists "tracksync_msk_select" on msk;
+create policy "tracksync_msk_select"
+  on msk for select
+  to anon, authenticated
+  using (true);
+
+--    b) data_updates: transactions are append-only (no update /
+--       delete policies by design).
+drop policy if exists "tracksync_data_updates_insert" on data_updates;
+create policy "tracksync_data_updates_insert"
+  on data_updates for insert
   to anon, authenticated
   with check (true);
 
-drop policy if exists "tracksync_tx_select" on "Transactions";
-create policy "tracksync_tx_select"
-  on "Transactions"
-  for select
+drop policy if exists "tracksync_data_updates_select" on data_updates;
+create policy "tracksync_data_updates_select"
+  on data_updates for select
   to anon, authenticated
   using (true);
 
 -- ============================================================
 -- NOTES
---  * "client_ref" is a UUID generated in the browser so a sync
---    retry can never double-insert the same transaction.
---  * Until this script is run, the app keeps working fully
---    offline: transactions are queued in localStorage and every
---    write attempt reports an honest local-only status.
+--  * The old "Transactions" table is deprecated - the app no
+--    longer reads or writes it, and nothing here creates it.
+--    Optional cleanup of a legacy install:
+--      drop table if exists "Transactions";
+--  * Offline scans queue in localStorage as
+--    { client_ref, payload } and replay the same payload on sync.
+--  * A scan with no msk row for the scanned QR is blocked before
+--    any write; a queued legacy v1 entry that cannot be resolved
+--    through msk is dropped at sync time.
 -- ============================================================

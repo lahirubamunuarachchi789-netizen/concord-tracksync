@@ -20,6 +20,7 @@ import {
   createTransaction,
   getQueuedCount,
   getRecentTransactions,
+  lookupOrgQr,
   retryQueuedTransactions,
 } from '@/lib/transactionsService';
 
@@ -159,7 +160,29 @@ export default function TransactionsView() {
 
   async function autoSubmit(code, record, qc) {
     setPending((n) => n + 1);
-    const result = await createTransaction(userRef.current, code, record, qc);
+
+    // 1) Resolve the scanned MSK QR to its org_qr via the msk table.
+    //    No mapping -> block completely, nothing is written.
+    const lookup = await lookupOrgQr(code);
+    if (!lookup.found) {
+      setPending((n) => Math.max(0, n - 1));
+      setAttention(true);
+      window.setTimeout(() => setAttention(false), 2200);
+      setLastScan((prev) =>
+        prev && prev.value === code ? { ...prev, result: 'not-found' } : prev
+      );
+      notify(
+        'error',
+        'Scan blocked — Scanned MSK QR not found in msk mapping table!',
+        lookup.offline
+          ? 'The msk table could not be reached - check your connection and try again.'
+          : `No org_qr exists for "${code}". Nothing was saved.`
+      );
+      return;
+    }
+
+    // 2) Insert the standard transaction into data_updates (org_qr as qr_code).
+    const result = await createTransaction(userRef.current, lookup.orgQr, record, qc);
     setPending((n) => Math.max(0, n - 1));
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedCount());
@@ -167,9 +190,13 @@ export default function TransactionsView() {
       prevScan && prevScan.value === code ? { ...prevScan, result: result.status } : prevScan
     );
     if (result.status === 'synced') {
-      notify('success', `Recorded: ${code} | ${record} | ${qc}`, 'Saved to Supabase.');
+      notify(
+        'success',
+        `Recorded: ${lookup.orgQr} | ${record} | ${qc}`,
+        `MSK scan ${code} resolved via the msk table.`
+      );
     } else {
-      notify('info', `Recorded on device: ${code} | ${record} | ${qc}`, result.error);
+      notify('info', `Recorded on device: ${lookup.orgQr} | ${record} | ${qc}`, result.error);
     }
   }
 

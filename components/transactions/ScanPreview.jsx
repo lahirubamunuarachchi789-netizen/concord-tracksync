@@ -56,6 +56,10 @@ export default function ScanPreview({ scan, onClear }) {
               <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
                 Duplicate - blocked
               </span>
+            ) : scan.result === 'not-found' ? (
+              <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
+                Not in msk - blocked
+              </span>
             ) : scan.result === 'queued' || scan.result === 'failed' ? (
               <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
                 {scan.result === 'failed' ? 'Retry pending' : 'Queued offline'}

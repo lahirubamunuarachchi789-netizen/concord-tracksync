@@ -137,20 +137,25 @@ export default function TransactionSummary({
               <div key={tx.client_ref} className="flex items-start gap-3 px-5 py-3.5">
                 <div className="min-w-0 flex-1">
                   <p className="truncate font-mono text-sm font-semibold text-slate-900">
-                    {tx.qr_value}
+                    {tx.qr_code}
                   </p>
                   <p className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <StatusChip tone={tx.RecordStatus === 'IN' ? 'emerald' : 'indigo'}>
-                      {tx.RecordStatus}
+                    <StatusChip tone={tx.record_status === 'IN' ? 'emerald' : 'indigo'}>
+                      {tx.record_status}
                     </StatusChip>
-                    <StatusChip tone={QC_TONES[tx.QCStatus] || 'slate'}>{tx.QCStatus}</StatusChip>
+                    <StatusChip tone={QC_TONES[tx.qc_status] || 'slate'}>
+                      {tx.qc_status}
+                    </StatusChip>
+                    <StatusChip tone={tx.count < 0 ? 'red' : 'emerald'}>
+                      {tx.count > 0 ? `+${tx.count}` : tx.count}
+                    </StatusChip>
                     <span className="text-[11px] text-slate-400">
                       {new Date(tx.created_at).toLocaleTimeString([], {
                         hour: '2-digit',
                         minute: '2-digit',
                       })}
                       {' · '}
-                      {tx.Username}
+                      {tx.created_by}
                     </span>
                   </p>
                 </div>
