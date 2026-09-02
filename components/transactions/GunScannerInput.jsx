@@ -141,12 +141,12 @@ export default function GunScannerInput({ onScan }) {
             <span className="font-semibold text-slate-600">
               {lastSource === 'gun' ? 'scanner gun burst' : 'typed entry'}
             </span>
-            . Auto-submits on the gun&apos;s Enter suffix.
+            . Each Enter auto-submits instantly with the locked statuses.
           </p>
         ) : (
           <p className="mt-2 text-xs text-slate-400">
-            Fire the scanner gun anywhere on the page - keystrokes land in this field and submit
-            automatically.
+            Fire the scanner gun anywhere on the page - the code auto-submits immediately and the
+            field re-arms for the next scan. No button clicks needed.
           </p>
         )}
       </div>

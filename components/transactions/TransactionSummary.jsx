@@ -35,47 +35,40 @@ export function StatusChip({ children, tone = 'slate' }) {
 
 export default function TransactionSummary({
   user,
-  draft,
+  statuses,
+  lastScan,
   history,
   queuedCount,
   onRetrySync,
   syncing,
 }) {
-  const { scan, recordStatus, qcStatus } = draft;
-
   return (
     <div className="flex flex-col gap-4">
-      {/* Pending record */}
+      {/* Active workflow */}
       <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200">
         <h3 className="text-sm font-bold uppercase tracking-wide text-slate-700">
-          Transaction summary
+          Active workflow
         </h3>
         <dl className="mt-3 space-y-2.5 text-sm">
           <div className="flex items-center justify-between gap-3">
-            <dt className="text-slate-400">Code</dt>
-            <dd className="max-w-[60%] truncate font-mono font-semibold text-slate-900">
-              {scan?.value || '-'}
-            </dd>
-          </div>
-          <div className="flex items-center justify-between gap-3">
             <dt className="text-slate-400">Record status</dt>
             <dd>
-              {recordStatus ? (
-                <StatusChip tone={recordStatus === 'IN' ? 'emerald' : 'indigo'}>
-                  {recordStatus}
+              {statuses.record ? (
+                <StatusChip tone={statuses.record === 'IN' ? 'emerald' : 'indigo'}>
+                  {statuses.record}
                 </StatusChip>
               ) : (
-                <span className="text-slate-300">-</span>
+                <span className="text-slate-300">Not selected</span>
               )}
             </dd>
           </div>
           <div className="flex items-center justify-between gap-3">
             <dt className="text-slate-400">QC status</dt>
             <dd>
-              {qcStatus ? (
-                <StatusChip tone={QC_TONES[qcStatus] || 'slate'}>{qcStatus}</StatusChip>
+              {statuses.qc ? (
+                <StatusChip tone={QC_TONES[statuses.qc] || 'slate'}>{statuses.qc}</StatusChip>
               ) : (
-                <span className="text-slate-300">-</span>
+                <span className="text-slate-300">Not selected</span>
               )}
             </dd>
           </div>
@@ -87,6 +80,11 @@ export default function TransactionSummary({
             </dd>
           </div>
         </dl>
+        {statuses.record && statuses.qc ? (
+          <p className="mt-3 rounded-xl bg-emerald-50 px-3 py-2 text-xs font-medium text-emerald-700 ring-1 ring-emerald-100">
+            Both statuses are locked. Every scan auto-submits with this combination.
+          </p>
+        ) : null}
       </section>
 
       {/* Queue health */}

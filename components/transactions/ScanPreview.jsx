@@ -48,6 +48,15 @@ export default function ScanPreview({ scan, onClear }) {
               {badge.label}
             </span>
             <span className="text-[11px] font-medium text-slate-400">at {time}</span>
+            {scan.result === 'synced' ? (
+              <span className="inline-flex items-center rounded-full bg-emerald-50 px-2.5 py-0.5 text-[11px] font-semibold text-emerald-700 ring-1 ring-emerald-200">
+                Recorded
+              </span>
+            ) : scan.result === 'queued' || scan.result === 'failed' ? (
+              <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                {scan.result === 'failed' ? 'Retry pending' : 'Queued offline'}
+              </span>
+            ) : null}
           </div>
           <p className="mt-1.5 break-all font-mono text-base font-bold leading-snug text-slate-900">
             {scan.value}

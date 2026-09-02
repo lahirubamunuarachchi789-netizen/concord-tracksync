@@ -19,12 +19,13 @@ const QC_ACCENT = {
 /**
  * Dual action sections: Record Status (IN / OUT) and QC Status
  * (Forward, B Grade, C Grade, Lab Testing, Return, Reworked).
- * Buttons stay locked until a code is scanned.
+ * Selections are ALWAYS enabled - they are pre-selected once and
+ * stay locked across every scan until the user changes them.
  */
 export default function StatusControls({
-  enabled,
   recordStatus,
   qcStatus,
+  attention = false,
   onRecord,
   onQc,
 }) {
@@ -32,8 +33,8 @@ export default function StatusControls({
     <div className="grid grid-cols-1 gap-4 lg:grid-cols-2">
       {/* Record Status */}
       <section
-        className={`rounded-2xl bg-white p-5 ring-1 transition ${
-          enabled ? 'ring-slate-200' : 'ring-slate-100'
+        className={`rounded-2xl bg-white p-5 ring-1 transition duration-300 ${
+          attention ? 'animate-pulse ring-2 ring-amber-400' : 'ring-slate-200'
         }`}
       >
         <header className="mb-4 flex items-center justify-between">
@@ -51,12 +52,11 @@ export default function StatusControls({
               <button
                 key={status}
                 type="button"
-                disabled={!enabled}
                 aria-pressed={active}
                 onClick={() => onRecord(status)}
                 className={`rounded-xl border px-4 py-4 text-base font-extrabold tracking-wide transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                   active ? ACTIVE_CLS : IDLE_CLS
-                } ${!enabled ? 'cursor-not-allowed opacity-40' : 'hover:-translate-y-0.5'}`}
+                } hover:-translate-y-0.5`}
               >
                 {status}
               </button>
@@ -65,15 +65,15 @@ export default function StatusControls({
         </div>
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
           {recordStatus
-            ? `Selected record status: ${recordStatus}.`
-            : 'Pick how this scan moves: raw material IN or finished goods OUT.'}
+            ? `Locked: ${recordStatus} applies to every scan until you change it.`
+            : 'Pick how scans move: raw material IN or finished goods OUT.'}
         </p>
       </section>
 
       {/* QC Status */}
       <section
-        className={`rounded-2xl bg-white p-5 ring-1 transition ${
-          enabled ? 'ring-slate-200' : 'ring-slate-100'
+        className={`rounded-2xl bg-white p-5 ring-1 transition duration-300 ${
+          attention ? 'animate-pulse ring-2 ring-amber-400' : 'ring-slate-200'
         }`}
       >
         <header className="mb-4 flex items-center justify-between">
@@ -89,12 +89,11 @@ export default function StatusControls({
               <button
                 key={status}
                 type="button"
-                disabled={!enabled}
                 aria-pressed={active}
                 onClick={() => onQc(status)}
                 className={`rounded-xl border px-2 py-3 text-sm font-bold transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 ${
                   active ? ACTIVE_CLS : IDLE_CLS
-                } ${!enabled ? 'cursor-not-allowed opacity-40' : 'hover:-translate-y-0.5'}`}
+                } hover:-translate-y-0.5`}
               >
                 {status}
               </button>
@@ -103,18 +102,24 @@ export default function StatusControls({
         </div>
         <p className="mt-3 text-xs leading-relaxed text-slate-400">
           {qcStatus
-            ? `Selected QC status: ${qcStatus}.`
-            : 'Choose the quality outcome recorded for this scan.'}
+            ? `Locked: ${qcStatus} applies to every scan until you change it.`
+            : 'Choose the quality outcome recorded for each scan.'}
         </p>
       </section>
 
-      {/* Locked overlay hint */}
-      {!enabled ? (
-        <p className="flex items-center justify-center gap-2 rounded-xl bg-slate-100 px-4 py-2.5 text-xs font-medium text-slate-500 lg:col-span-2">
-          <LockIcon className="h-3.5 w-3.5" />
-          Scan or type a QR code to unlock the status buttons.
-        </p>
-      ) : null}
+      {/* Persistence hint */}
+      <p
+        className={`flex items-center justify-center gap-2 rounded-xl px-4 py-2.5 text-xs font-medium lg:col-span-2 ${
+          attention
+            ? 'bg-amber-100 text-amber-800'
+            : 'bg-slate-100 text-slate-500'
+        }`}
+      >
+        <LockIcon className="h-3.5 w-3.5" />
+        {attention
+          ? 'A scan was blocked - select both statuses above, then scan again.'
+          : 'Selections persist across scans (and page reloads) until you change them.'}
+      </p>
     </div>
   );
 }

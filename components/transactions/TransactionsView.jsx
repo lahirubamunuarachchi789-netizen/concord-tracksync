@@ -5,11 +5,11 @@
 // scanner gun), quick status selection and transaction recording.
 // ============================================================
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
 import Notification from '@/components/Notification';
 import PageHeader from '@/components/PageHeader';
-import { CheckIcon, SpinnerIcon } from '@/components/icons';
+import { AlertIcon, CheckIcon, SpinnerIcon } from '@/components/icons';
 import { useSession } from '@/components/AppShell';
 import GunScannerInput from './GunScannerInput';
 import ScanMethodToggle from './ScanMethodToggle';
@@ -32,22 +32,30 @@ const CameraScanner = dynamic(() => import('./CameraScanner'), {
   ),
 });
 
-const ACTIVE_GRADIENT =
-  'bg-gradient-to-r from-blue-700 via-indigo-700 to-purple-800 shadow-lg shadow-indigo-600/25 hover:shadow-indigo-600/40';
+/** localStorage key for the persistent (locked) status selection. */
+const STATUS_KEY = 'tracksync.txStatuses';
 
 export default function TransactionsView() {
   const user = useSession();
   const [method, setMethod] = useState('gun');
-  const [draft, setDraft] = useState({
-    scan: null, // { value, source, at }
-    recordStatus: '',
-    qcStatus: '',
-  });
-  const [submitting, setSubmitting] = useState(false);
+  // Locked workflow statuses: pre-selected once, reused for EVERY scan
+  // until the user manually changes them. Persisted across reloads too.
+  const [statuses, setStatuses] = useState({ record: '', qc: '' });
+  const [lastScan, setLastScan] = useState(null); // { value, source, at, result }
+  const [attention, setAttention] = useState(false); // flash when a scan is blocked
+  const [pending, setPending] = useState(0); // auto-submissions in flight
   const [history, setHistory] = useState([]);
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState(null);
+
+  // Refs keep the stable scan callback free of stale closures.
+  const statusesRef = useRef(statuses);
+  statusesRef.current = statuses;
+  const userRef = useRef(user);
+  userRef.current = user;
+  const lastScanRef = useRef(null);
+  lastScanRef.current = lastScan;
 
   const notify = useCallback((type, title, message) => {
     setToast({ id: Date.now(), type, title, message });
@@ -59,6 +67,25 @@ export default function TransactionsView() {
     const timer = setTimeout(() => setToast(null), 4500);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Restore the locked statuses (e.g. after a page refresh mid-shift).
+  useEffect(() => {
+    try {
+      const saved = JSON.parse(localStorage.getItem(STATUS_KEY) || '{}');
+      if (saved.record || saved.qc) setStatuses((prev) => ({ ...prev, ...saved }));
+    } catch {
+      /* ignore corrupt storage */
+    }
+  }, []);
+
+  // Persist the locked statuses across scans AND reloads.
+  useEffect(() => {
+    try {
+      localStorage.setItem(STATUS_KEY, JSON.stringify(statuses));
+    } catch {
+      /* storage unavailable - in-memory selection still works */
+    }
+  }, [statuses]);
 
   /* ------------------------- initial load ------------------------- */
 
@@ -96,38 +123,55 @@ export default function TransactionsView() {
     return () => window.removeEventListener('online', retry);
   }, [notify]);
 
-  /* --------------------------- scanning --------------------------- */
+  /* ------------------- scanning + instant auto-submit ------------------ */
 
-  const handleScan = useCallback((value, source) => {
-    setDraft((prev) => {
-      if (prev.scan?.value === value && Date.now() - prev.scan.at < 1500) return prev;
-      return { ...prev, scan: { value, source, at: Date.now() } };
-    });
-  }, []);
+  // Stable across renders so CameraScanner's captured decode callback
+  // and the gun input never hold a stale closure. Fresh values come
+  // from the refs above.
+  const handleScan = useCallback(
+    (value, source) => {
+      const code = String(value || '').trim();
+      if (!code) return;
 
-  /* --------------------------- recording -------------------------- */
+      // Ignore the same code firing again within a short window.
+      const at = Date.now();
+      const prev = lastScanRef.current;
+      if (prev?.value === code && at - prev.at < 1500) return;
 
-  async function submitTransaction() {
-    if (!draft.scan?.value || !draft.recordStatus || !draft.qcStatus || submitting) return;
-    setSubmitting(true);
-    const result = await createTransaction(
-      user,
-      draft.scan.value,
-      draft.recordStatus,
-      draft.qcStatus
-    );
+      const { record, qc } = statusesRef.current;
+      if (!record || !qc) {
+        // CRITICAL: never record without both statuses - prompt instead.
+        setAttention(true);
+        window.setTimeout(() => setAttention(false), 2200);
+        notify(
+          'error',
+          'Scan blocked',
+          'Select a Record status (IN / OUT) and a QC status first. They stay locked for every scan until you change them.'
+        );
+        return;
+      }
+
+      setLastScan({ value: code, source, at, result: null });
+      autoSubmit(code, record, qc);
+    },
+    [notify]
+  );
+
+  async function autoSubmit(code, record, qc) {
+    setPending((n) => n + 1);
+    const result = await createTransaction(userRef.current, code, record, qc);
+    setPending((n) => Math.max(0, n - 1));
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedCount());
-    setSubmitting(false);
+    setLastScan((prevScan) =>
+      prevScan && prevScan.value === code ? { ...prevScan, result: result.status } : prevScan
+    );
     if (result.status === 'synced') {
-      notify('success', 'Transaction recorded', `${draft.scan.value} · ${draft.recordStatus} · ${draft.qcStatus}`);
+      notify('success', `Recorded: ${code} | ${record} | ${qc}`, 'Saved to Supabase.');
     } else {
-      notify('info', 'Saved on device', result.error);
+      notify('info', `Recorded on device: ${code} | ${record} | ${qc}`, result.error);
     }
   }
-
-  const scanReady = Boolean(draft.scan?.value);
-  const canSubmit = scanReady && draft.recordStatus && draft.qcStatus;
 
   function handleRetrySync() {
     setSyncing(true);
@@ -151,7 +195,7 @@ export default function TransactionsView() {
     <div className="mx-auto max-w-7xl animate-fade-slide">
       <PageHeader
         title="Transactions"
-        subtitle="Scan a QR code, pick the record & QC status, and log the movement instantly"
+        subtitle="Lock in your statuses once - every scan then records instantly, hands-free"
         actions={
           <StatusChip tone={queuedCount > 0 ? 'amber' : 'emerald'}>
             {queuedCount > 0 ? `${queuedCount} queued` : 'All synced'}
@@ -178,51 +222,53 @@ export default function TransactionsView() {
           </section>
 
           <ScanPreview
-            key={draft.scan?.at || 'empty'}
-            scan={draft.scan}
-            onClear={() => setDraft((prev) => ({ ...prev, scan: null }))}
+            key={lastScan?.at || 'empty'}
+            scan={lastScan}
+            onClear={() => setLastScan(null)}
           />
 
           <StatusControls
-            enabled={scanReady}
-            recordStatus={draft.recordStatus}
-            qcStatus={draft.qcStatus}
-            onRecord={(status) =>
-              setDraft((prev) => ({
-                ...prev,
-                recordStatus: prev.recordStatus === status ? '' : status,
-              }))
-            }
-            onQc={(status) =>
-              setDraft((prev) => ({ ...prev, qcStatus: prev.qcStatus === status ? '' : status }))
-            }
+            recordStatus={statuses.record}
+            qcStatus={statuses.qc}
+            attention={attention}
+            onRecord={(status) => setStatuses((prev) => ({ ...prev, record: status }))}
+            onQc={(status) => setStatuses((prev) => ({ ...prev, qc: status }))}
           />
 
-          <button
-            type="button"
-            disabled={!canSubmit || submitting}
-            onClick={submitTransaction}
-            className={`inline-flex w-full items-center justify-center gap-2 rounded-2xl px-4 py-4 text-base font-extrabold text-white transition-all duration-200 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 disabled:cursor-not-allowed disabled:opacity-40 ${ACTIVE_GRADIENT}`}
+          {/* Workflow status strip: readiness + live recording indicator */}
+          <div
+            className={`flex flex-wrap items-center justify-center gap-2 rounded-2xl px-4 py-3.5 text-center text-sm font-semibold ring-1 transition ${
+              statuses.record && statuses.qc
+                ? 'bg-emerald-50 text-emerald-800 ring-emerald-200'
+                : 'bg-amber-50 text-amber-800 ring-amber-200'
+            }`}
           >
-            {submitting ? (
-              <SpinnerIcon className="h-5 w-5 animate-spin" />
+            {pending > 0 ? (
+              <>
+                <SpinnerIcon className="h-4 w-4 animate-spin" />
+                Recording...
+              </>
+            ) : statuses.record && statuses.qc ? (
+              <>
+                <CheckIcon className="h-4 w-4" />
+                Ready — statuses locked: {statuses.record} · {statuses.qc}. Every scan records
+                instantly.
+              </>
             ) : (
-              <CheckIcon className="h-5 w-5" />
+              <>
+                <AlertIcon className="h-4 w-4" />
+                Pre-select a Record status and a QC status to start scanning.
+              </>
             )}
-            {submitting ? 'Recording transaction...' : 'Record transaction'}
-          </button>
-          <p className="-mt-2 text-center text-xs text-slate-400">
-            {canSubmit
-              ? `${draft.scan.value} · ${draft.recordStatus} · ${draft.qcStatus}`
-              : 'Select one Record status and one QC status to enable recording.'}
-          </p>
+          </div>
         </div>
 
         {/* Right: summary + log */}
         <div className="xl:col-span-2">
           <TransactionSummary
             user={user}
-            draft={draft}
+            statuses={statuses}
+            lastScan={lastScan}
             history={history}
             queuedCount={queuedCount}
             onRetrySync={handleRetrySync}
