@@ -64,7 +64,8 @@ the publishable key so registration and login work from the browser.
 │       ├── layout.js         # App shell: sidebar + header + auth gate
 │       ├── home/page.js      # Welcome hero + quick links
 │       ├── dashboard/        # KPI cards, output chart, activity feed
-│       ├── transactions/     # Dual QR scanning + status recording (live)
+│       ├── transactions/     # Tabbed module: standard flow + QR activation
+│       │   └── activation/   # PO (Supabase-backed) + size locked scanning
 │       ├── reports/          # Module scaffold
 │       └── stock/            # Module scaffold
 ├── components/
@@ -81,7 +82,13 @@ the publishable key so registration and login work from the browser.
 │   ├── Notification.jsx      # Toast status notifications
 │   ├── icons.jsx             # Inline SVG icons (no extra deps)
 │   └── transactions/         # Transactions module components
-│       ├── TransactionsView.jsx   # State hub: scan -> status -> record
+│       ├── TransactionsTabs.jsx     # Tab switcher: Standard vs QR Activation
+│       ├── TransactionsView.jsx     # State hub: scan -> status -> record
+│       ├── activation/              # QR Activation window
+│       │   ├── QrActivationView.jsx # Locked PO+size, auto-activate on scan
+│       │   ├── PoSelect.jsx         # PO dropdown + Add modal + Delete (Supabase)
+│       │   ├── SizeSelect.jsx       # Size quick-grid 35-50
+│       │   └── ActivationSummary.jsx# Locked params + activation log
 │       ├── ScanMethodToggle.jsx   # Camera vs scanner-gun selector
 │       ├── CameraScanner.jsx      # html5-qrcode live camera wrapper
 │       ├── GunScannerInput.jsx    # USB/BT scanner-gun keystroke capture
@@ -93,10 +100,12 @@ the publishable key so registration and login work from the browser.
 │   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
 │   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
 │   ├── transactionsService.js # Insert/queue/read on "Transactions"
+│   ├── qrActivationService.js # PO fetch/add/delete + activation insert/queue
 │   └── session.js            # Client session store + auth cookie
 ├── middleware.js             # Route protection for the protected sections
 ├── supabase/schema.sql       # "Loging Table" + RLS policies
 ├── supabase/transactions-schema.sql # "Transactions" table + RLS policies
+├── supabase/qr-activation-schema.sql # purchase_orders + qr_activations + RLS
 ├── .env                      # Supabase credentials (git-ignored)
 └── .env.example              # Template for new machines
 ```
