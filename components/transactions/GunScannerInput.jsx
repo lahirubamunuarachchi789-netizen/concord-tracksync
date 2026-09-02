@@ -7,7 +7,7 @@
 // ============================================================
 
 import { useEffect, useRef, useState } from 'react';
-import { QrCodeIcon, ScanLineIcon, XIcon } from '@/components/icons';
+import { ScanLineIcon, XIcon } from '@/components/icons';
 
 const MIN_LENGTH = 2;
 /** Average ms per character below which input is treated as a machine scan. */
@@ -149,19 +149,6 @@ export default function GunScannerInput({ onScan }) {
             field re-arms for the next scan. No button clicks needed.
           </p>
         )}
-      </div>
-
-      <div className="flex items-start gap-3 rounded-xl bg-white p-4 ring-1 ring-slate-200">
-        <span className="flex h-9 w-9 shrink-0 items-center justify-center rounded-xl bg-gradient-to-br from-blue-600 via-indigo-600 to-purple-700 text-white shadow-md shadow-indigo-600/25">
-          <QrCodeIcon className="h-4 w-4" />
-        </span>
-        <div className="text-xs leading-relaxed text-slate-500">
-          <p className="font-semibold text-slate-700">Scanner gun setup</p>
-          <p className="mt-0.5">
-            Configure the gun in USB keyboard (HID) mode. Suffix: Enter / CR. Codes shorter than{' '}
-            {MIN_LENGTH} characters are ignored to filter stray keystrokes.
-          </p>
-        </div>
       </div>
     </div>
   );

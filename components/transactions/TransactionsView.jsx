@@ -204,7 +204,7 @@ export default function TransactionsView() {
       />
 
       <div className="grid grid-cols-1 items-start gap-5 xl:grid-cols-5">
-        {/* Left: scanning + actions */}
+        {/* Left: scan input + status workflow */}
         <div className="flex flex-col gap-5 xl:col-span-3">
           <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200">
             <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
@@ -220,12 +220,6 @@ export default function TransactionsView() {
               )}
             </div>
           </section>
-
-          <ScanPreview
-            key={lastScan?.at || 'empty'}
-            scan={lastScan}
-            onClear={() => setLastScan(null)}
-          />
 
           <StatusControls
             recordStatus={statuses.record}
@@ -263,8 +257,14 @@ export default function TransactionsView() {
           </div>
         </div>
 
-        {/* Right: summary + log */}
-        <div className="xl:col-span-2">
+        {/* Right: last scan result + summary + log */}
+        <div className="flex flex-col gap-4 xl:col-span-2">
+          <ScanPreview
+            key={lastScan?.at || 'empty'}
+            scan={lastScan}
+            onClear={() => setLastScan(null)}
+          />
+
           <TransactionSummary
             user={user}
             statuses={statuses}
