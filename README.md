@@ -79,6 +79,23 @@ Only when all four pass is the standard record written (`qr_code` = resolved `or
 
 Run the guard test-suite with `npm test` (Node built-in test runner, no extra dependencies).
 
+## Dual-Scan for Finishing departments (`/transactions`)
+
+Finishing lines record a Shoe QR **together with** its Inner Box QR
+([`lib/transactionDualScan.js`](lib/transactionDualScan.js)):
+
+- **Normal Dual-Scan** — the logged-in user's department is `Finishing 01`, `Finishing 02` or
+  `Finishing 03` **and** the selected QC Status is NOT `B Grade` / `C Grade` / `Lab Testing`:
+  Scan 1 captures the **Inner Box QR** (focus auto-shifts), Scan 2 on the **Shoe QR** submits
+  the pair; inputs then reset to stage 1 for the next pair.
+- **QC bypass** — with `B Grade`, `C Grade` or `Lab Testing` selected (even in a Finishing
+  department), Dual-Scan is disabled: the Inner Box field is hidden, focus stays on the
+  Shoe QR and every scan submits immediately.
+- **Persistence** — dual pairs are written to `data_updates` with `inner_qr` set; bypassed /
+  non-Finishing scans persist `inner_qr = null`
+  (column added by `supabase/transactions-schema.sql`).
+
+
 ## Registration: dynamic Department dropdown
 
 The sign-up form (`components/AuthCard.jsx`) no longer uses a hardcoded department list.

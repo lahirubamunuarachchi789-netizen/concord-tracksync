@@ -56,6 +56,10 @@ export default function ScanPreview({ scan, onClear }) {
               <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
                 Duplicate - blocked
               </span>
+            ) : scan.result === 'inner-captured' ? (
+              <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                Inner Box - scan 1 of 2
+              </span>
             ) : scan.result === 'not-found' || scan.result === 'blocked' ? (
               <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
                 {scan.result === 'blocked' ? 'Blocked by validation' : 'Not in msk - blocked'}

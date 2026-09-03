@@ -33,6 +33,9 @@ create unique index if not exists msk_msk_qr_key on msk (msk_qr);
 -- 2. Standard-transaction records (shared with QR Activation).
 --    The standard flow writes ONLY these columns:
 --      qr_code       = org_qr resolved from the msk table
+--      inner_qr      = Inner Box QR captured by the Dual-Scan process
+--                      (Finishing departments; NULL for single scans
+--                      and bypassed QC statuses)
 --      record_status = 'IN' | 'OUT'
 --      qc_status     = Forward | B Grade | C Grade | Lab Testing
 --                      | Return | Reworked
@@ -43,6 +46,7 @@ create unique index if not exists msk_msk_qr_key on msk (msk_qr);
 create table if not exists data_updates (
   id            bigserial primary key,
   qr_code       text,
+  inner_qr      text,
   record_status text,
   qc_status     text,
   created_at    timestamptz,
@@ -50,6 +54,11 @@ create table if not exists data_updates (
   count         integer,
   created_by    text
 );
+
+-- Migration for live tables created before the Dual-Scan feature:
+-- the Inner Box QR captured in Finishing departments (nullable -
+-- single scans and bypassed QC statuses store NULL).
+alter table data_updates add column if not exists inner_qr text;
 
 -- 3. Row Level Security
 alter table msk enable row level security;

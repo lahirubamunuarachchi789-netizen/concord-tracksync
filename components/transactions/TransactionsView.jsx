@@ -12,6 +12,7 @@ import PageHeader from '@/components/PageHeader';
 import { AlertIcon, CheckIcon, SpinnerIcon } from '@/components/icons';
 import { useSession } from '@/components/AppShell';
 import GunScannerInput from './GunScannerInput';
+import InnerBoxQrField from './InnerBoxQrField';
 import ScanMethodToggle from './ScanMethodToggle';
 import ScanPreview from './ScanPreview';
 import StatusControls from './StatusControls';
@@ -23,6 +24,14 @@ import {
   retryQueuedTransactions,
   validateStandardTransactionScan,
 } from '@/lib/transactionsService';
+import {
+  DUAL_SCAN_STAGES,
+  applyDualScanScan,
+  createDualScanState,
+  isDualScanEnabled,
+  isDualScanQcBypass,
+  isFinishingDepartment,
+} from '@/lib/transactionDualScan';
 
 const CameraScanner = dynamic(() => import('./CameraScanner'), {
   ssr: false,
@@ -50,6 +59,13 @@ export default function TransactionsView() {
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState(null);
 
+  // Dual-Scan state (Finishing departments): which scan is expected
+  // next and the Inner Box QR captured in scan 1 of 2.
+  const [dualScan, setDualScan] = useState(() => createDualScanState(false));
+  // Bumped to make the scanner gun re-grab focus on stage changes and
+  // after every recorded pair ("reset focus to the initial field").
+  const [focusSignal, setFocusSignal] = useState(0);
+
   // Refs keep the stable scan callback free of stale closures.
   const statusesRef = useRef(statuses);
   statusesRef.current = statuses;
@@ -57,6 +73,19 @@ export default function TransactionsView() {
   userRef.current = user;
   const lastScanRef = useRef(null);
   lastScanRef.current = lastScan;
+  const dualScanRef = useRef(dualScan);
+  dualScanRef.current = dualScan;
+
+  // Dual-Scan condition: Finishing department + QC status NOT in the
+  // bypass list (B Grade / C Grade / Lab Testing). Any change of the
+  // department, the QC status or the mode resets the pair and re-arms
+  // focus on the initial field.
+  const dualEnabled = isDualScanEnabled(user?.department, statuses.qc);
+  const qcBypassed = isFinishingDepartment(user?.department) && isDualScanQcBypass(statuses.qc);
+  useEffect(() => {
+    setDualScan(createDualScanState(dualEnabled));
+    setFocusSignal((n) => n + 1);
+  }, [dualEnabled]);
 
   const notify = useCallback((type, title, message) => {
     setToast({ id: Date.now(), type, title, message });
@@ -152,13 +181,38 @@ export default function TransactionsView() {
         return;
       }
 
+      // Route through the Dual-Scan stage machine (a no-op pass-through
+      // when Dual-Scan is disabled: bypassed QC statuses and
+      // non-Finishing departments submit immediately with inner = null).
+      const { next, submitCode, innerQrForSubmit } = applyDualScanScan(
+        dualScanRef.current,
+        code
+      );
+
+      if (!submitCode) {
+        // Scan 1 of 2: Inner Box QR captured - nothing is recorded yet.
+        // Shift focus to the Shoe QR field for scan 2.
+        setDualScan(next);
+        setFocusSignal((n) => n + 1);
+        setLastScan({ value: code, source, at, result: 'inner-captured' });
+        notify(
+          'info',
+          'Inner Box QR captured (scan 1 of 2)',
+          'Now scan the Shoe QR - it validates and records the pair together.'
+        );
+        return;
+      }
+
+      // Scan 2 of 2 (or a single scan when bypassed): stage machine
+      // already reset the pair for the next Inner Box scan.
+      setDualScan(next);
       setLastScan({ value: code, source, at, result: null });
-      autoSubmit(code, record, qc);
+      autoSubmit(code, record, qc, innerQrForSubmit);
     },
     [notify]
   );
 
-  async function autoSubmit(code, record, qc) {
+  async function autoSubmit(code, record, qc, innerQr = null) {
     setPending((n) => n + 1);
 
     // 1) Run ALL strict scan guards before anything is written:
@@ -172,6 +226,12 @@ export default function TransactionsView() {
       setPending((n) => Math.max(0, n - 1));
       setAttention(true);
       window.setTimeout(() => setAttention(false), 2200);
+      // Keep the captured Inner Box QR so the operator only needs to
+      // rescan the Shoe QR (the pair was NOT recorded).
+      if (innerQr) {
+        setDualScan({ enabled: true, stage: DUAL_SCAN_STAGES.SHOE, innerQr });
+      }
+      setFocusSignal((n) => n + 1);
       setLastScan((prev) =>
         prev && prev.value === code ? { ...prev, result: 'blocked' } : prev
       );
@@ -186,22 +246,35 @@ export default function TransactionsView() {
     }
 
     // 2) All guards passed - insert the standard transaction into
-    //    data_updates (org_qr as qr_code).
-    const result = await createTransaction(userRef.current, gate.orgQr, record, qc);
+    //    data_updates (org_qr as qr_code, inner_qr = Inner Box QR or
+    //    null for single scans).
+    const result = await createTransaction(userRef.current, gate.orgQr, record, qc, innerQr);
     setPending((n) => Math.max(0, n - 1));
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedCount());
     setLastScan((prevScan) =>
       prevScan && prevScan.value === code ? { ...prevScan, result: result.status } : prevScan
     );
+    // Reset inputs/focus to the initial field for the next scan.
+    setFocusSignal((n) => n + 1);
     if (result.status === 'synced') {
       notify(
         'success',
-        `Recorded: ${gate.orgQr} | ${record} | ${qc}`,
-        `MSK scan ${code} resolved via the msk table.`
+        innerQr
+          ? `Recorded: ${gate.orgQr} + Inner ${innerQr} | ${record} | ${qc}`
+          : `Recorded: ${gate.orgQr} | ${record} | ${qc}`,
+        innerQr
+          ? 'Dual-Scan pair recorded - the Inner Box QR was stored with the transaction.'
+          : `MSK scan ${code} resolved via the msk table.`
       );
     } else {
-      notify('info', `Recorded on device: ${gate.orgQr} | ${record} | ${qc}`, result.error);
+      notify(
+        'info',
+        innerQr
+          ? `Recorded on device: ${gate.orgQr} + Inner ${innerQr} | ${record} | ${qc}`
+          : `Recorded on device: ${gate.orgQr} | ${record} | ${qc}`,
+        result.error
+      );
     }
   }
 
@@ -239,16 +312,57 @@ export default function TransactionsView() {
         {/* Left: scan input + status workflow */}
         <div className="flex flex-col gap-5 xl:col-span-3">
           <section className="rounded-2xl bg-white p-5 ring-1 ring-slate-200">
-            <h2 className="mb-4 text-sm font-bold uppercase tracking-wide text-slate-700">
-              Scanning method
-            </h2>
+            <div className="mb-4 flex items-center justify-between gap-2">
+              <h2 className="text-sm font-bold uppercase tracking-wide text-slate-700">
+                Scanning method
+              </h2>
+              {dualEnabled ? (
+                <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
+                  Dual-Scan mode · 2 scans
+                </span>
+              ) : qcBypassed ? (
+                <span className="inline-flex items-center rounded-full bg-amber-50 px-2.5 py-0.5 text-[11px] font-semibold text-amber-700 ring-1 ring-amber-200">
+                  Dual-Scan bypassed · {statuses.qc}
+                </span>
+              ) : null}
+            </div>
             <ScanMethodToggle method={method} onChange={setMethod} />
+
+            {/* Scan 1 of 2 - Inner Box QR (only in Dual-Scan mode). */}
+            {dualEnabled ? (
+              <div className="mt-5">
+                <InnerBoxQrField
+                  value={dualScan.innerQr}
+                  awaiting={dualScan.stage === DUAL_SCAN_STAGES.INNER}
+                  onClear={() => {
+                    setDualScan(createDualScanState(true));
+                    setFocusSignal((n) => n + 1);
+                  }}
+                />
+              </div>
+            ) : null}
+            {qcBypassed ? (
+              <p className="mt-5 rounded-xl bg-amber-50 px-4 py-2.5 text-xs font-medium text-amber-800 ring-1 ring-amber-200">
+                Dual-Scan is bypassed for “{statuses.qc}” - scan the Shoe QR only (no Inner Box QR
+                is recorded).
+              </p>
+            ) : null}
 
             <div className="mt-5">
               {method === 'camera' ? (
                 <CameraScanner onScan={handleScan} />
               ) : (
-                <GunScannerInput onScan={handleScan} />
+                <GunScannerInput
+                  onScan={handleScan}
+                  focusSignal={focusSignal}
+                  placeholder={
+                    dualEnabled
+                      ? dualScan.stage === DUAL_SCAN_STAGES.INNER
+                        ? 'Scan 1 of 2 - Inner Box QR...'
+                        : 'Scan 2 of 2 - Shoe QR...'
+                      : 'Scan with the gun or type a code...'
+                  }
+                />
               )}
             </div>
           </section>

@@ -13,7 +13,12 @@ const MIN_LENGTH = 2;
 /** Average ms per character below which input is treated as a machine scan. */
 const SCAN_SPEED_THRESHOLD_MS = 35;
 
-export default function GunScannerInput({ onScan, paused = false }) {
+export default function GunScannerInput({
+  onScan,
+  paused = false,
+  focusSignal = 0,
+  placeholder = 'Scan with the gun or type a code...',
+}) {
   const inputRef = useRef(null);
   const [value, setValue] = useState('');
   const [listening, setListening] = useState(true);
@@ -40,6 +45,12 @@ export default function GunScannerInput({ onScan, paused = false }) {
     window.addEventListener('focus', handleFocus);
     return () => window.removeEventListener('focus', handleFocus);
   }, [armed]);
+
+  // External focus requests (Dual-Scan stage changes, mode resets)
+  // re-grab the capture field so the next scan lands in the right spot.
+  useEffect(() => {
+    if (focusSignal && armed) inputRef.current?.focus();
+  }, [armed, focusSignal]);
 
   // Global capture: while armed, route stray keystrokes into the field.
   // Never hijacks keys when the user is typing in another editable
@@ -132,7 +143,7 @@ export default function GunScannerInput({ onScan, paused = false }) {
                 submit(value);
               }
             }}
-            placeholder="Scan with the gun or type a code..."
+            placeholder={placeholder}
             spellCheck={false}
             autoComplete="off"
             aria-label="QR scanner gun input"
