@@ -68,6 +68,59 @@ test('Inner PO extraction skips non-digit URL separators', () => {
   assert.equal(extractInnerBoxPo('12345678901'), null); // < 12 digits
 });
 
+/* ----- Validation 2: real GS1 label (control chars + variable parts) - */
+
+// Real scanned Inner Box QR: GS1 elements 01+GTIN(14) | 21+serial |
+// 10+PO(148925) | 8200+URL, delimited by \u001d group separators.
+const INNER_GS =
+  '010733050996397521028002291\u001d10148925\u001d8200http://blaklader.com';
+// The same label with the group separators stripped (some scanners).
+const INNER_GS_NO_SEP = INNER_GS.split('\u001d').join('');
+
+test('real GS1 sample: PO comes from the 10-AI segment -> 148925 -> 8925', () => {
+  assert.equal(extractInnerBoxPo(INNER_GS), '8925');
+});
+
+test('real GS1 sample without separators: URL-anchored scan still yields 8925', () => {
+  assert.equal(extractInnerBoxPo(INNER_GS_NO_SEP), '8925');
+});
+
+test('GS1 control characters never corrupt the extraction', () => {
+  // Whitespace around the PO segment is trimmed before matching.
+  const padded =
+    '010733050996397521028002291\u001d 10148925 \u001d8200http://blaklader.com';
+  assert.equal(extractInnerBoxPo(padded), '8925');
+  // The first 10-element wins; a later 10-element is ignored.
+  const twoTenElements =
+    '0107330509963975\u001d10148925\u001d21X\u001d10999999\u001d8200http://blaklader.com';
+  assert.equal(extractInnerBoxPo(twoTenElements), '8925');
+});
+
+test('real GS1 sample: 13-digit Box Code is unaffected by control characters', () => {
+  // 01 + 14-digit GTIN prefix: skip 3 digits -> 7330509963975.
+  assert.equal(extractInnerBoxCode(INNER_GS), '7330509963975');
+  assert.equal(extractInnerBoxCode(INNER_GS_NO_SEP), '7330509963975');
+});
+
+test('real GS1 sample: pair matches 148925-01 shoe (8925), rejects 144065 shoe', () => {
+  assert.equal(
+    validateDualScanPair({
+      innerQr: INNER_GS,
+      orgQr: ';MQC-9;148925-01;42;scanned;',
+      srlSize: '42',
+    }),
+    null
+  );
+  assert.deepEqual(
+    validateDualScanPair({
+      innerQr: INNER_GS,
+      orgQr: ';MQC-9;144065;42;scanned;',
+      srlSize: '42',
+    }),
+    { reason: BLOCK_PO_MISMATCH }
+  );
+});
+
 /* ---------- Validation 3: inner 13-digit Box Code extraction -------- */
 
 test('Inner Box Code: skip first 3 digits then extract the next 13', () => {
