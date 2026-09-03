@@ -20,8 +20,8 @@ import {
   createTransaction,
   getQueuedCount,
   getRecentTransactions,
-  lookupOrgQr,
   retryQueuedTransactions,
+  validateStandardTransactionScan,
 } from '@/lib/transactionsService';
 
 const CameraScanner = dynamic(() => import('./CameraScanner'), {
@@ -161,28 +161,33 @@ export default function TransactionsView() {
   async function autoSubmit(code, record, qc) {
     setPending((n) => n + 1);
 
-    // 1) Resolve the scanned MSK QR to its org_qr via the msk table.
-    //    No mapping -> block completely, nothing is written.
-    const lookup = await lookupOrgQr(code);
-    if (!lookup.found) {
+    // 1) Run ALL strict scan guards before anything is written:
+    //      Rule 1: msk Active-status gate -> resolves the org_qr
+    //      Rule 2: preceding sequence net count must be exactly +1
+    //      Rule 3: current department net count must be 0
+    //      Rule 4: parallel same-sequence net count must be 0
+    //    Any failure blocks the scan completely - amber flash + toast.
+    const gate = await validateStandardTransactionScan(code, userRef.current);
+    if (!gate.ok) {
       setPending((n) => Math.max(0, n - 1));
       setAttention(true);
       window.setTimeout(() => setAttention(false), 2200);
       setLastScan((prev) =>
-        prev && prev.value === code ? { ...prev, result: 'not-found' } : prev
+        prev && prev.value === code ? { ...prev, result: 'blocked' } : prev
       );
       notify(
         'error',
-        'Scan blocked — Scanned MSK QR not found in msk mapping table!',
-        lookup.offline
+        gate.reason,
+        gate.offline
           ? 'The msk table could not be reached - check your connection and try again.'
-          : `No org_qr exists for "${code}". Nothing was saved.`
+          : 'Nothing was saved for this scan. Resolve the issue above and scan again.'
       );
       return;
     }
 
-    // 2) Insert the standard transaction into data_updates (org_qr as qr_code).
-    const result = await createTransaction(userRef.current, lookup.orgQr, record, qc);
+    // 2) All guards passed - insert the standard transaction into
+    //    data_updates (org_qr as qr_code).
+    const result = await createTransaction(userRef.current, gate.orgQr, record, qc);
     setPending((n) => Math.max(0, n - 1));
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedCount());
@@ -192,11 +197,11 @@ export default function TransactionsView() {
     if (result.status === 'synced') {
       notify(
         'success',
-        `Recorded: ${lookup.orgQr} | ${record} | ${qc}`,
+        `Recorded: ${gate.orgQr} | ${record} | ${qc}`,
         `MSK scan ${code} resolved via the msk table.`
       );
     } else {
-      notify('info', `Recorded on device: ${lookup.orgQr} | ${record} | ${qc}`, result.error);
+      notify('info', `Recorded on device: ${gate.orgQr} | ${record} | ${qc}`, result.error);
     }
   }
 

@@ -1,18 +1,31 @@
 -- ============================================================
 -- Concord TrackSync - Supabase schema for STANDARD transactions
--- Flow: scanned MSK QR -> msk lookup (msk_qr -> org_qr)
---            -> data_updates insert (qr_code = resolved org_qr)
--- Tables used: msk         (id, msk_qr, org_qr - NO status column)
+-- Flow: scanned MSK QR -> msk lookup (msk_qr -> org_qr, ONLY when
+--            status = 'Active') -> strict guards -> data_updates insert
+-- Tables used: msk         (id, msk_qr, org_qr, status)
+--              departments (id, department, sequence) - see
+--                          departments-schema.sql
 --              data_updates (shared with the QR Activation flow)
 -- Run in: Supabase Dashboard -> SQL Editor (idempotent)
 -- ============================================================
 
--- 1. msk mapping table (exact live shape; no "status" column)
+-- 1. msk mapping table.
+--    status gates every standard scan: ONLY 'Active' rows resolve a
+--    scanned msk_qr to its org_qr ('Packed' / other statuses block).
 create table if not exists msk (
   id     bigserial primary key,
   msk_qr text not null,
-  org_qr text not null
+  org_qr text not null,
+  status text not null default 'Active'
 );
+
+-- Migration for live tables created before the status column existed.
+alter table msk add column if not exists status text;
+-- Existing mappings stay scannable - everything already in the table
+-- is treated as Active until explicitly marked otherwise.
+update msk set status = 'Active' where status is null;
+alter table msk alter column status set default 'Active';
+alter table msk alter column status set not null;
 
 -- A scanned MSK QR must map to exactly one org QR.
 create unique index if not exists msk_msk_qr_key on msk (msk_qr);

@@ -1,0 +1,5 @@
+{
+  "type": "module",
+  "private": true,
+  "description": "Concord TrackSync test workspace (Node built-in test runner)"
+}

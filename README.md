@@ -53,6 +53,32 @@ If you need to recreate it, or if you hit *Row Level Security* errors, run
 It (idempotently) creates the table, enables RLS, and adds `insert`/`select` policies for
 the publishable key so registration and login work from the browser.
 
+## Standard transaction validation rules (`/transactions`)
+
+Every **Standard Transactions** scan runs four strict guards BEFORE anything is written to
+`data_updates` (see [`lib/transactionGuards.js`](lib/transactionGuards.js)). Execution order:
+
+1. **Active-status MSK gate** (`msk`): the scanned QR resolves to an `org_qr` only from a row
+   whose `status` is `Active` (case-insensitive). `Packed` / other statuses are ignored —
+   with no active row the scan is blocked:
+   *“Scan blocked — No active MSK QR mapping found!”*
+2. **Preceding department net count** (`departments` + `data_updates`): for `current_seq > 1`
+   the net sum of `count` for the resolved `org_qr` across **all** departments on the highest
+   sequence strictly below the user's sequence must be exactly **+1**:
+   *“Scan blocked — Previous department sequence scan is incomplete or net count is not +1!”*
+3. **Current department net count** (`data_updates`): the net sum of `count` for the `org_qr`
+   in the user's own department must be **0** before a new scan:
+   *“Scan blocked — QR code has already been scanned in this department (Net count is already +1)!”*
+4. **Parallel sequence mutual exclusion** (`departments` + `data_updates`): departments sharing
+   the user's exact `sequence` must hold a net count of **0** for the `org_qr`:
+   *“Scan blocked — QR code has an active count in a parallel department with the same sequence!”*
+
+Only when all four pass is the standard record written (`qr_code` = resolved `org_qr`,
+`record_status`, `qc_status`, dynamic `count` (+1 / −1 for `Return`), `department`,
+`created_by`, `created_at`). A blocked scan never writes and flashes the status panels amber.
+
+Run the guard test-suite with `npm test` (Node built-in test runner, no extra dependencies).
+
 ## Project structure
 
 ```
@@ -99,12 +125,15 @@ the publishable key so registration and login work from the browser.
 ├── lib/
 │   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
 │   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
+│   ├── transactionGuards.js  # 4 strict scan guards (msk Active gate + sequence net counts)
 │   ├── transactionsService.js # msk lookup + data_updates insert/queue/read
 │   ├── qrActivationService.js # PO fetch/add/delete + activation insert/queue
 │   └── session.js            # Client session store + auth cookie
+├── tests/                    # Node built-in test runner suites (npm test)
 ├── middleware.js             # Route protection for the protected sections
 ├── supabase/schema.sql       # "Loging Table" + RLS policies
-├── supabase/transactions-schema.sql # msk mapping + data_updates (standard tx) + RLS
+├── supabase/departments-schema.sql # departments (id, department, sequence) + RLS + seeds
+├── supabase/transactions-schema.sql # msk mapping (status gate) + data_updates (standard tx) + RLS
 ├── supabase/qr-activation-schema.sql # "PO" + pod MQC + data_updates + RLS
 ├── .env                      # Supabase credentials (git-ignored)
 └── .env.example              # Template for new machines
