@@ -95,6 +95,29 @@ Finishing lines record a Shoe QR **together with** its Inner Box QR
   non-Finishing scans persist `inner_qr = null`
   (column added by `supabase/transactions-schema.sql`).
 
+### Inner Box pair validation (runs before the sequence guards)
+
+When an Inner Box QR is captured, three strict checks run on the Shoe scan
+(see `validateDualScanPair` in `lib/transactionDualScan.js`, wired into
+`lib/transactionGuards.js`):
+
+1. **URL structure** — `inner_qr` must contain the exact substring
+   `http://blaklader.com`; otherwise: *"Invalid Inner Box QR format: Must contain
+   http://blaklader.com"*.
+2. **PO match** — from `inner_qr`, moving backwards from the end: skip the first block of
+   8 digits, then take the preceding 4 digits. From the Shoe `org_qr` (`;mqc;po;size;scanned;`),
+   a hyphenated PO (`148925-01`) is stripped to `148925` and a plain PO (`144065`) is used as
+   is, then the last 4 digits are compared (`8925` / `4065`); a mismatch fails with
+   *"PO Number Mismatch between Inner Box QR and Shoe QR"*.
+3. **Size match** — digits 4–16 of `inner_qr` (skip the first 3, take the next 13) form the
+   Box Code, which is looked up in the `srl_num` table (`box_num` → `size`,
+   created by `supabase/srl-num-schema.sql`) and compared against the Shoe `org_qr` size;
+   a mismatch fails with *"Size Mismatch: Inner Box Size does not match Shoe Size"*.
+   An unreachable `srl_num` table blocks the scan fail-safe.
+
+**Global failure reset** — if ANY check fails (these three or any of the four standard
+guards), the captured Inner Box QR is discarded, the Inner Box field is cleared and focus
+returns to it for a completely fresh pair.
 
 ## Registration: dynamic Department dropdown
 

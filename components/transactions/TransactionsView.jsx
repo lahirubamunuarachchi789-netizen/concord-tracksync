@@ -216,21 +216,28 @@ export default function TransactionsView() {
     setPending((n) => n + 1);
 
     // 1) Run ALL strict scan guards before anything is written:
-    //      Rule 1: msk Active-status gate -> resolves the org_qr
-    //      Rule 2: preceding sequence net count must be exactly +1
-    //      Rule 3: current department net count must be 0
-    //      Rule 4: parallel same-sequence net count must be 0
+    //      Rule 1:  msk Active-status gate -> resolves the org_qr
+    //      Rule 1b: Dual-Scan Inner Box checks (V1 URL token, V2 PO
+    //               match, V3 srl_num size match) when innerQr captured
+    //      Rule 2:  preceding sequence net count must be exactly +1
+    //      Rule 3:  current department net count must be 0
+    //      Rule 4:  parallel same-sequence net count must be 0
     //    Any failure blocks the scan completely - amber flash + toast.
-    const gate = await validateStandardTransactionScan(code, userRef.current);
+    const gate = await validateStandardTransactionScan(
+      code,
+      userRef.current,
+      innerQr
+    );
     if (!gate.ok) {
       setPending((n) => Math.max(0, n - 1));
       setAttention(true);
       window.setTimeout(() => setAttention(false), 2200);
-      // Keep the captured Inner Box QR so the operator only needs to
-      // rescan the Shoe QR (the pair was NOT recorded).
-      if (innerQr) {
-        setDualScan({ enabled: true, stage: DUAL_SCAN_STAGES.SHOE, innerQr });
-      }
+      // GLOBAL failure reset: the pair was NOT recorded, so drop the
+      // captured Inner Box QR, empty the Inner Box input and re-arm
+      // focus on it (stage 1) for a completely fresh scan. In bypassed
+      // / single mode the state simply stays disabled and the focus
+      // signal returns to the Shoe QR field.
+      setDualScan(createDualScanState(dualScanRef.current.enabled));
       setFocusSignal((n) => n + 1);
       setLastScan((prev) =>
         prev && prev.value === code ? { ...prev, result: 'blocked' } : prev
@@ -238,9 +245,11 @@ export default function TransactionsView() {
       notify(
         'error',
         gate.reason,
-        gate.offline
-          ? 'The msk table could not be reached - check your connection and try again.'
-          : 'Nothing was saved for this scan. Resolve the issue above and scan again.'
+        gate.dualScan
+          ? 'The Inner Box pair was rejected - both fields were cleared. Scan the Inner Box QR again.'
+          : gate.offline
+            ? 'The msk table could not be reached - check your connection and try again.'
+            : 'Nothing was saved for this scan. Resolve the issue above and scan again.'
       );
       return;
     }
