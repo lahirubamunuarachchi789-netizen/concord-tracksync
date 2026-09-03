@@ -115,10 +115,14 @@ When an Inner Box QR is captured, three strict checks run on the Shoe scan
    plain PO (`144065`) is used as is, then the last 4 digits are compared (`8925` / `4065`);
    a mismatch fails with *"PO Number Mismatch between Inner Box QR and Shoe QR"*.
 3. **Size match** — digits 4–16 of `inner_qr` (skip the first 3, take the next 13) form the
-   Box Code, which is looked up in the `srl_num` table (`box_num` → `size`,
-   created by `supabase/srl-num-schema.sql`) and compared against the Shoe `org_qr` size;
-   a mismatch fails with *"Size Mismatch: Inner Box Size does not match Shoe Size"*.
-   An unreachable `srl_num` table blocks the scan fail-safe.
+   Box Code, which is `.trim()`-cleaned and looked up in the `srl_num` table (`box_num` →
+   `size`, created by `supabase/srl-num-schema.sql`) and compared against the Shoe `org_qr`
+   size (the 3rd `;` field of `;mqc;po;size;scanned;`). Both sides are compared as
+   `String(size).trim().toUpperCase()` (with numeric tolerance so `'35.0'` matches `'35'`).
+   Distinct failures: no `srl_num` row → *"Box code [extractedCode] not found in srl_num
+   database"*; different sizes → *"Size Mismatch: Inner Box Size ('[dbSize]') does not
+   match Shoe Size ('[shoeSize]')"* naming both values for debugging. An unreachable
+   `srl_num` table blocks the scan fail-safe.
 
 **Global failure reset** — if ANY check fails (these three or any of the four standard
 guards), the captured Inner Box QR is discarded, the Inner Box field is cleared and focus

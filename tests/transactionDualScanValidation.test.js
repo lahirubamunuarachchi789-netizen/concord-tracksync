@@ -10,6 +10,9 @@ import {
   extractShoePoCode,
   isInnerBoxQrFormatValid,
   parseOrgQr,
+  srlNumNotFoundReason,
+  sizeMismatchReason,
+  sizesMatch,
   validateDualScanPair,
 } from '../lib/transactionDualScan.js';
 import {
@@ -32,7 +35,12 @@ const SHOE_B = ';MQC-88;144065;42;scanned;';
 const SRL_SIZES = {
   '4567890123456': '42',
   '4567890124065': '42',
+  // Exact production row used by the V3 tests below.
+  '7330509963975': '35',
 };
+
+// Exact production shoe org_qr (3rd ';' field = size '35').
+const REAL_SHOE = ';566998;148925;35;33;';
 
 /* ------------- Validation 2: shoe PO extraction (both formats) ------ */
 
@@ -175,11 +183,71 @@ test('V2 failure: 148925-01 shoe (8925) vs inner 3456 fails with the exact messa
   assert.deepEqual(result, { reason: BLOCK_PO_MISMATCH });
 });
 
-test('V3 failure: missing srl_num row (or size mismatch) fails with the exact message', () => {
+test('V3 failure (a): a missing srl_num row fails naming the exact box code', () => {
   const missing = validateDualScanPair({ innerQr: INNER_A, orgQr: SHOE_A, srlSize: null });
-  assert.deepEqual(missing, { reason: BLOCK_SIZE_MISMATCH });
+  assert.deepEqual(missing, {
+    reason: srlNumNotFoundReason('4567890123456'),
+  });
+  assert.equal(
+    missing.reason,
+    'Box code 4567890123456 not found in srl_num database'
+  );
+});
+
+test('V3 failure (b): a size mismatch fails naming BOTH sizes', () => {
   const wrong = validateDualScanPair({ innerQr: INNER_A, orgQr: SHOE_A, srlSize: '44' });
-  assert.deepEqual(wrong, { reason: BLOCK_SIZE_MISMATCH });
+  assert.deepEqual(wrong, { reason: sizeMismatchReason('44', '42') });
+  assert.equal(
+    wrong.reason,
+    "Size Mismatch: Inner Box Size ('44') does not match Shoe Size ('42')"
+  );
+});
+
+test('V3 generic branch: label without a 13-digit Box Code keeps the static message', () => {
+  // Only 12 digits on the label: the PO resolves ('1234') but no
+  // 13-digit Box Code exists after the first 3 -> nothing to look up.
+  const result = validateDualScanPair({
+    innerQr: 'http://blaklader.com/123456789012',
+    orgQr: ';MQC-9;99991234;42;scanned;',
+    srlSize: '42',
+  });
+  assert.deepEqual(result, { reason: BLOCK_SIZE_MISMATCH });
+});
+
+/* ------ V3 with the exact production values (srl_num + shoe org_qr) -- */
+
+test('exact values: box code 7330509963975 is extracted and trimmed', () => {
+  assert.equal(extractInnerBoxCode(`  ${INNER_GS}  `), '7330509963975');
+  assert.equal(parseOrgQr(REAL_SHOE).size, '35');
+});
+
+test('exact values: real label + srl_num 7330509963975=35 + shoe ;566998;148925;35;33; passes', () => {
+  assert.equal(
+    validateDualScanPair({ innerQr: INNER_GS, orgQr: REAL_SHOE, srlSize: '35' }),
+    null
+  );
+});
+
+test('exact values: missing srl_num row -> "Box code 7330509963975 not found in srl_num database"', () => {
+  const result = validateDualScanPair({ innerQr: INNER_GS, orgQr: REAL_SHOE, srlSize: null });
+  assert.equal(result.reason, 'Box code 7330509963975 not found in srl_num database');
+});
+
+test('exact values: mismatch -> both sizes named (36 vs 35)', () => {
+  const result = validateDualScanPair({ innerQr: INNER_GS, orgQr: REAL_SHOE, srlSize: '36' });
+  assert.equal(
+    result.reason,
+    "Size Mismatch: Inner Box Size ('36') does not match Shoe Size ('35')"
+  );
+});
+
+test('sizesMatch: String + trim + toUpperCase, plus numeric tolerance', () => {
+  assert.equal(sizesMatch(' 35 ', '35'), true); // whitespace tolerance
+  assert.equal(sizesMatch('XL', 'xl'), true); // case-insensitive
+  assert.equal(sizesMatch('35.0', '35'), true); // numeric-equal formats
+  assert.equal(sizesMatch('35', '36'), false);
+  assert.equal(sizesMatch(null, '35'), false);
+  assert.equal(sizesMatch('35', undefined), false);
 });
 
 /* ------- orchestrator integration (guards run V1-V3 for pairs) ------ */
