@@ -79,6 +79,19 @@ Only when all four pass is the standard record written (`qr_code` = resolved `or
 
 Run the guard test-suite with `npm test` (Node built-in test runner, no extra dependencies).
 
+## Registration: dynamic Department dropdown
+
+The sign-up form (`components/AuthCard.jsx`) no longer uses a hardcoded department list.
+On mount it calls [`lib/departmentsService.js`](lib/departmentsService.js), which runs
+`SELECT department FROM departments ORDER BY sequence ASC, department ASC` and feeds the
+exact strings from the table into the Department combo box, so what a user registers in
+`Loging Table.Department` always matches `departments.department` byte-for-byte (same
+casing/format) — exactly what the standard-transaction sequence guards compare against.
+
+- **Loading**: a subtle spinner in the field + "Loading departments from the server..." hint.
+- **Failure / offline**: the fetcher never throws; the form shows an amber message with a
+  **Retry** button and the combo degrades to free-text typing, so registration never breaks.
+
 ## Project structure
 
 ```
@@ -125,6 +138,7 @@ Run the guard test-suite with `npm test` (Node built-in test runner, no extra de
 ├── lib/
 │   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
 │   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
+│   ├── departmentsService.js # departments fetch for the sign-up dropdown (exact values)
 │   ├── transactionGuards.js  # 4 strict scan guards (msk Active gate + sequence net counts)
 │   ├── transactionsService.js # msk lookup + data_updates insert/queue/read
 │   ├── qrActivationService.js # PO fetch/add/delete + activation insert/queue

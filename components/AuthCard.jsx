@@ -3,25 +3,12 @@
 import { useRouter } from 'next/navigation';
 import { useCallback, useEffect, useState } from 'react';
 import { loginUser, registerUser } from '@/lib/authService';
+import { fetchDepartmentOptions } from '@/lib/departmentsService';
 import { getSession, saveSession } from '@/lib/session';
 import AuthInput from './AuthInput';
 import BrandPanel from './BrandPanel';
 import Notification from './Notification';
 import { BuildingIcon, LockIcon, LogoMark, SpinnerIcon, UserIcon } from './icons';
-
-const DEPARTMENTS = [
-  'Desma',
-  'Cutting',
-  'Stitching',
-  'Assembly',
-  'Quality Control',
-  'Warehouse & Logistics',
-  'Production Planning',
-  'Maintenance',
-  'Human Resources',
-  'Administration',
-  'Management',
-];
 
 const SUBMIT_BUTTON_CLASSES =
   'mt-2 inline-flex w-full items-center justify-center gap-2 rounded-xl bg-gradient-to-r from-blue-600 via-indigo-600 to-purple-600 px-4 py-2.5 text-sm font-semibold text-white shadow-lg shadow-indigo-600/25 transition duration-200 hover:brightness-110 focus:outline-none focus-visible:ring-2 focus-visible:ring-indigo-500 focus-visible:ring-offset-2 disabled:cursor-not-allowed disabled:opacity-60';
@@ -47,6 +34,26 @@ export default function AuthCard() {
     const timer = setTimeout(() => setToast(null), 6000);
     return () => clearTimeout(timer);
   }, [toast]);
+
+  // Department options are fetched LIVE from the `departments` table so
+  // the dropdown offers the exact strings the sequence guards match on.
+  const [departmentOptions, setDepartmentOptions] = useState([]);
+  const [departmentsLoading, setDepartmentsLoading] = useState(false);
+  const [departmentsError, setDepartmentsError] = useState('');
+
+  const loadDepartments = useCallback(async () => {
+    setDepartmentsLoading(true);
+    setDepartmentsError('');
+    const result = await fetchDepartmentOptions();
+    setDepartmentOptions(result.departments);
+    setDepartmentsError(result.ok ? '' : result.message);
+    setDepartmentsLoading(false);
+  }, []);
+
+  // Fetch once on mount; the inline Retry button re-runs it on failure.
+  useEffect(() => {
+    loadDepartments();
+  }, [loadDepartments]);
 
   // Already signed in? Skip the login screen entirely.
   useEffect(() => {
@@ -225,17 +232,47 @@ export default function AuthCard() {
                 />
 
                 {!isLogin ? (
-                  <AuthInput
-                    label="Department"
-                    as="combo"
-                    value={department}
-                    onChange={(e) => setDepartment(e.target.value)}
-                    placeholder="e.g. Desma, Cutting, Quality Control"
-                    options={DEPARTMENTS}
-                    icon={<BuildingIcon className="h-5 w-5" />}
-                    autoComplete="organization"
-                    disabled={loading}
-                  />
+                  <div>
+                    <AuthInput
+                      label="Department"
+                      as="combo"
+                      value={department}
+                      onChange={(e) => setDepartment(e.target.value)}
+                      placeholder={
+                        departmentOptions.length
+                          ? 'Select or type your department'
+                          : 'e.g. Desma, Cutting, Quality Control'
+                      }
+                      options={departmentOptions}
+                      icon={
+                        departmentsLoading ? (
+                          <SpinnerIcon className="h-5 w-5 animate-spin text-indigo-500" />
+                        ) : (
+                          <BuildingIcon className="h-5 w-5" />
+                        )
+                      }
+                      autoComplete="organization"
+                      disabled={loading}
+                    />
+                    {/* Subtle live-state hint under the field */}
+                    {departmentsLoading ? (
+                      <p className="mt-1.5 flex items-center gap-1.5 text-xs text-slate-400">
+                        <SpinnerIcon className="h-3 w-3 animate-spin" />
+                        Loading departments from the server...
+                      </p>
+                    ) : departmentsError ? (
+                      <p className="mt-1.5 flex flex-wrap items-center gap-x-2 gap-y-1 text-xs text-amber-600">
+                        <span>{departmentsError}</span>
+                        <button
+                          type="button"
+                          onClick={loadDepartments}
+                          className="font-semibold text-indigo-600 transition hover:text-indigo-700 hover:underline"
+                        >
+                          Retry
+                        </button>
+                      </p>
+                    ) : null}
+                  </div>
                 ) : null}
 
                 <AuthInput
