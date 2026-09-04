@@ -123,6 +123,15 @@ scanned by the user ([`components/transactions/TransactionsView.jsx`](components
 - **Record** — the insert is the standard `data_updates` shape: `qr_code` = resolved Shoe QR,
   `inner_qr` = scanned Inner Box QR, `department` = Packing, plus `record_status`, `qc_status`,
   `count` (+1 / −1 for `Return`), `created_by`, `created_at`.
+- **Automatic msk lifecycle** — immediately after a Packing record is saved
+  (`syncMskStatusForPackingTransaction` in
+  [`lib/transactionsService.js`](lib/transactionsService.js)), the Packing net count for the
+  resolved Shoe QR decides the `msk` row status (`WHERE org_qr = <org_qr>`): net **+1** →
+  `status = 'Packed'` (the shoe can no longer be scanned on the floor — Rule 1 ignores
+  non-Active rows), net **0** (a Return/Undo reverted the packing) → `status = 'Active'`.
+  The sync never throws and never re-routes a saved transaction into the offline queue;
+  offline-queued Packing rows run the same trigger when `retryQueuedTransactions` flushes
+  them. Non-Packing departments never mutate `msk.status`.
 
 ### Inner Box pair validation (runs before the sequence guards)
 

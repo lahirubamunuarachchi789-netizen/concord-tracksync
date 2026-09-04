@@ -3,6 +3,10 @@ import assert from 'node:assert/strict';
 
 import {
   resolveOrgQrFromInnerBox,
+  createTransaction,
+  syncMskStatusForPackingTransaction,
+  updateMskStatusForOrgQr,
+  isPackingDepartment,
   PACKING_UNLINKED_INNER_BOX_TITLE,
   PACKING_UNLINKED_INNER_BOX_MESSAGE,
 } from '../lib/transactionsService.js';
@@ -56,6 +60,8 @@ function createMockSupabase(tables = {}) {
       filters: [],
       orders: [],
       limit: null,
+      insert: null,
+      update: null,
     };
     queries.push(record);
     const chain = {
@@ -63,8 +69,20 @@ function createMockSupabase(tables = {}) {
         record.select = columns;
         return chain;
       },
+      insert(rows) {
+        record.insert = rows;
+        return chain;
+      },
+      update(values) {
+        record.update = values;
+        return chain;
+      },
       eq(column, value) {
         record.filters.push(['eq', column, value]);
+        return chain;
+      },
+      in(column, values) {
+        record.filters.push(['in', column, values]);
         return chain;
       },
       order(column, opts) {
@@ -423,6 +441,231 @@ test('Packing mode skips Rule 1 even when the msk table has no mapping at all', 
   });
   assert.equal(gate.ok, true);
   assert.equal(db.calls.mskLookups.length, 0);
+});
+
+/* ========= Packing msk lifecycle trigger (msk.status sync) =========== */
+
+test('isPackingDepartment: exact-name gate mirrors the view single-scan gate', () => {
+  assert.equal(isPackingDepartment('Packing'), true);
+  assert.equal(isPackingDepartment('Packing 02'), false);
+  assert.equal(isPackingDepartment('packing'), false);
+  assert.equal(isPackingDepartment(undefined), false);
+});
+
+test('msk helper: updateMskStatusForOrgQr writes the status on the msk row addressed by org_qr', async () => {
+  const { client, queries } = createMockSupabase({
+    msk: { data: [{ id: 1 }], error: null },
+  });
+  const result = await updateMskStatusForOrgQr(SHOE_ORG, 'Packed', client);
+  assert.deepEqual(result, { updated: true, rows: 1 });
+  assert.equal(queries.length, 1);
+  const q = queries[0];
+  assert.equal(q.table, 'msk');
+  assert.deepEqual(q.update, { status: 'Packed' });
+  assert.deepEqual(q.filters, [['eq', 'org_qr', SHOE_ORG]]);
+  assert.equal(q.select, 'id');
+});
+
+test('msk helper: a blank org_qr is a no-op (no query issued)', async () => {
+  const { client, queries } = createMockSupabase();
+  const result = await updateMskStatusForOrgQr('   ', 'Packed', client);
+  assert.deepEqual(result, { updated: false, rows: 0, reason: 'missing-org-qr' });
+  assert.equal(queries.length, 0);
+});
+
+test('msk trigger: NON-Packing departments never touch msk.status (zero queries)', async () => {
+  const { client, queries } = createMockSupabase();
+  const result = await syncMskStatusForPackingTransaction(
+    { username: 'nimal', department: 'Finishing 01' },
+    SHOE_ORG,
+    client
+  );
+  assert.deepEqual(result, { triggered: false, reason: 'not-packing' });
+  // No net-count select and no msk update may happen.
+  assert.equal(queries.length, 0);
+});
+
+test('msk trigger: Packing net +1 marks msk.status = Packed', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: [{ count: 1 }], error: null },
+    msk: { data: [{ id: 1 }], error: null },
+  });
+  const result = await syncMskStatusForPackingTransaction(PACKING_USER, SHOE_ORG, client);
+  assert.deepEqual(result, {
+    triggered: true,
+    net: 1,
+    status: 'Packed',
+    updated: true,
+    rows: 1,
+  });
+  // The net was computed from data_updates for the org_qr in Packing.
+  const netQuery = queries.find((q) => q.table === 'data_updates' && !q.insert && !q.update);
+  assert.ok(netQuery);
+  assert.equal(netQuery.select, 'count');
+  assert.deepEqual(netQuery.filters, [
+    ['eq', 'qr_code', SHOE_ORG],
+    ['in', 'department', ['Packing']],
+  ]);
+  // The msk row was addressed by org_qr and set to 'Packed'.
+  const mskUpdate = queries.find((q) => q.table === 'msk');
+  assert.ok(mskUpdate);
+  assert.deepEqual(mskUpdate.update, { status: 'Packed' });
+  assert.deepEqual(mskUpdate.filters, [['eq', 'org_qr', SHOE_ORG]]);
+});
+
+test('msk trigger: Packing net 0 reverts msk.status = Active (Return/Undo)', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: [{ count: 1 }, { count: -1 }], error: null },
+    msk: { data: [{ id: 1 }], error: null },
+  });
+  const result = await syncMskStatusForPackingTransaction(PACKING_USER, SHOE_ORG, client);
+  assert.deepEqual(result, {
+    triggered: true,
+    net: 0,
+    status: 'Active',
+    updated: true,
+    rows: 1,
+  });
+  const mskUpdate = queries.find((q) => q.table === 'msk');
+  assert.deepEqual(mskUpdate.update, { status: 'Active' });
+  assert.deepEqual(mskUpdate.filters, [['eq', 'org_qr', SHOE_ORG]]);
+});
+
+test('msk trigger: an unexpected net count leaves msk untouched (defensive)', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: [{ count: 3 }], error: null },
+  });
+  const result = await syncMskStatusForPackingTransaction(PACKING_USER, SHOE_ORG, client);
+  assert.deepEqual(result, { triggered: false, reason: 'unexpected-net-count', net: 3 });
+  assert.equal(queries.find((q) => q.table === 'msk'), undefined);
+});
+
+test('msk trigger: unreachable data_updates leaves msk untouched (fail-safe)', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: null, error: { message: 'fetch failed' } },
+  });
+  const result = await syncMskStatusForPackingTransaction(PACKING_USER, SHOE_ORG, client);
+  assert.equal(result.triggered, false);
+  assert.equal(result.reason, 'net-count-unavailable');
+  assert.equal(queries.find((q) => q.table === 'msk'), undefined);
+});
+
+test('msk trigger: an msk update failure is reported non-fatally (never throws)', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: [{ count: 1 }], error: null },
+    msk: { data: null, error: { message: 'fetch failed' } },
+  });
+  const result = await syncMskStatusForPackingTransaction(PACKING_USER, SHOE_ORG, client);
+  assert.equal(result.triggered, true);
+  assert.equal(result.net, 1);
+  assert.equal(result.status, 'Packed');
+  assert.equal(result.updated, false);
+  assert.match(result.error, /fetch failed/);
+});
+
+/* ==== createTransaction wiring (trigger runs right after the save) === */
+
+test('Packing scan recorded (net +1): createTransaction marks msk.status = Packed', async () => {
+  const { client, queries } = createMockSupabase({
+    // Net count AFTER the just-saved Packing IN record: +1.
+    data_updates: { data: [{ count: 1 }], error: null },
+    msk: { data: [{ id: 1 }], error: null },
+  });
+  const result = await createTransaction(
+    PACKING_USER,
+    SHOE_ORG,
+    'IN',
+    'Forward',
+    INNER_QR,
+    client
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'synced');
+  // The transaction itself is the standard record (resolved Shoe QR +
+  // scanned Inner Box QR + Packing department + count +1).
+  const insert = queries.find((q) => q.table === 'data_updates' && q.insert);
+  assert.ok(insert);
+  assert.equal(insert.insert.length, 1);
+  assert.equal(insert.insert[0].qr_code, SHOE_ORG);
+  assert.equal(insert.insert[0].inner_qr, INNER_QR);
+  assert.equal(insert.insert[0].department, 'Packing');
+  assert.equal(insert.insert[0].count, 1);
+  assert.equal(insert.insert[0].qc_status, 'Forward');
+  // The automatic trigger marked the shoe Packed.
+  assert.deepEqual(result.mskStatus, {
+    triggered: true,
+    net: 1,
+    status: 'Packed',
+    updated: true,
+    rows: 1,
+  });
+  const mskUpdate = queries.find((q) => q.table === 'msk');
+  assert.ok(mskUpdate);
+  assert.deepEqual(mskUpdate.update, { status: 'Packed' });
+  assert.deepEqual(mskUpdate.filters, [['eq', 'org_qr', SHOE_ORG]]);
+});
+
+test('Packing Return recorded (net 0): createTransaction reverts msk.status = Active', async () => {
+  const { client, queries } = createMockSupabase({
+    // Rows AFTER the Return record: +1 and -1 -> net back to 0.
+    data_updates: { data: [{ count: 1 }, { count: -1 }], error: null },
+    msk: { data: [{ id: 1 }], error: null },
+  });
+  const result = await createTransaction(
+    PACKING_USER,
+    SHOE_ORG,
+    'IN',
+    'Return',
+    null,
+    client
+  );
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'synced');
+  assert.equal(result.row.count, -1); // Return records -1
+  assert.deepEqual(result.mskStatus, {
+    triggered: true,
+    net: 0,
+    status: 'Active',
+    updated: true,
+    rows: 1,
+  });
+  const mskUpdate = queries.find((q) => q.table === 'msk');
+  assert.ok(mskUpdate);
+  assert.deepEqual(mskUpdate.update, { status: 'Active' });
+  assert.deepEqual(mskUpdate.filters, [['eq', 'org_qr', SHOE_ORG]]);
+});
+
+test('NON-Packing scan: createTransaction leaves msk.status unchanged', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: null, error: null },
+  });
+  const user = { username: 'nimal', department: 'Finishing 01' };
+  const result = await createTransaction(user, SHOE_ORG, 'IN', 'Forward', null, client);
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'synced');
+  // The trigger was not even attempted: no mskStatus on the result.
+  assert.equal(result.mskStatus, undefined);
+  // Exactly ONE query happened (the data_updates insert) - no Packing
+  // net-count select and no msk update.
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].table, 'data_updates');
+  assert.ok(queries[0].insert);
+  assert.equal(queries.find((q) => q.table === 'msk'), undefined);
+});
+
+test('Packing scan QUEUED offline: the msk trigger is deferred (record not in the DB yet)', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: null, error: { message: 'fetch failed - network down' } },
+  });
+  const result = await createTransaction(PACKING_USER, SHOE_ORG, 'IN', 'Forward', null, client);
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'queued'); // saved on device, flushed later
+  assert.equal(result.mskStatus, undefined);
+  // Only the failed insert was attempted - the trigger fires when the
+  // queue flushes (retryQueuedTransactions), never against a record
+  // that is not in the DB yet.
+  assert.equal(queries.length, 1);
+  assert.equal(queries.find((q) => q.table === 'msk'), undefined);
 });
 
 
