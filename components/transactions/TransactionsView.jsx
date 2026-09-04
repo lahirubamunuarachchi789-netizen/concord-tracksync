@@ -23,6 +23,10 @@ import {
   getRecentTransactions,
   retryQueuedTransactions,
   validateStandardTransactionScan,
+  resolveOrgQrFromInnerBox,
+  PACKING_UNLINKED_INNER_BOX_TITLE,
+  PACKING_UNLINKED_INNER_BOX_MESSAGE,
+  PACKING_LOOKUP_OFFLINE_MESSAGE,
 } from '@/lib/transactionsService';
 import {
   DUAL_SCAN_STAGES,
@@ -82,6 +86,10 @@ export default function TransactionsView() {
   // focus on the initial field.
   const dualEnabled = isDualScanEnabled(user?.department, statuses.qc);
   const qcBypassed = isFinishingDepartment(user?.department) && isDualScanQcBypass(statuses.qc);
+  // SPECIAL MODE: Packing Department scans ONLY the Inner Box QR - the
+  // Shoe QR is resolved automatically from data_updates (no Dual-Scan
+  // pair, no msk gate).
+  const isPackingMode = user?.department === 'Packing';
   useEffect(() => {
     setDualScan(createDualScanState(dualEnabled));
     setFocusSignal((n) => n + 1);
@@ -159,7 +167,7 @@ export default function TransactionsView() {
   // and the gun input never hold a stale closure. Fresh values come
   // from the refs above.
   const handleScan = useCallback(
-    (value, source) => {
+    async (value, source) => {
       const code = String(value || '').trim();
       if (!code) return;
 
@@ -178,6 +186,36 @@ export default function TransactionsView() {
           'Scan blocked',
           'Select a Record status (IN / OUT) and a QC status first. They stay locked for every scan until you change them.'
         );
+        return;
+      }
+
+      // SPECIAL MODE: Packing Department single-scan Inner Box lookup.
+      // The user scans ONLY the Inner Box QR into the input field - the
+      // Shoe QR (org_qr) is resolved automatically from data_updates
+      // (inner_qr -> qr_code). No Dual-Scan pair is captured and the
+      // msk gate is bypassed (validation runs via the pre-resolved
+      // org_qr in autoSubmit).
+      if (userRef.current?.department === 'Packing') {
+        const lookup = await resolveOrgQrFromInnerBox(code);
+        if (!lookup.found) {
+          // Fail-closed: an unlinked box (or an unreachable table)
+          // blocks the scan completely - nothing is written.
+          setLastScan({ value: code, source: 'inner-qr', at, result: 'unlinked' });
+          setAttention(true);
+          window.setTimeout(() => setAttention(false), 2200);
+          notify(
+            'error',
+            PACKING_UNLINKED_INNER_BOX_TITLE,
+            lookup.offline
+              ? PACKING_LOOKUP_OFFLINE_MESSAGE
+              : PACKING_UNLINKED_INNER_BOX_MESSAGE
+          );
+          return;
+        }
+        // Linked box: validate + record against the resolved Shoe QR,
+        // storing the scanned Inner Box QR with the transaction.
+        setLastScan({ value: code, source: 'inner-qr', at, result: null });
+        autoSubmit(lookup.orgQr, record, qc, code);
         return;
       }
 
@@ -222,12 +260,30 @@ export default function TransactionsView() {
     //      Rule 2:  preceding sequence net count must be exactly +1
     //      Rule 3:  prospective net count (current + scan +/-1) in [0, 1]
     //      Rule 4:  parallel same-sequence net count must be 0
+    //      Rule 5:  downstream department sequence guard
     //    Any failure blocks the scan completely - amber flash + toast.
+    //    `code` is the scannedQr (Shoe QR), `innerQr` is the captured Inner Box QR.
+    //    In Packing mode, `code` is the already-resolved org_qr from data_updates.
+    const isPackingSubmit = userRef.current?.department === 'Packing';
+
+    // In Packing mode the `code` parameter is the RESOLVED org_qr (the
+    // Shoe QR) - the value the user actually scanned is `innerQr` (the
+    // Inner Box QR). The last-scan preview is keyed by the scanned
+    // value, so use the correct one per mode.
+    const scannedValue = isPackingSubmit ? innerQr : code;
+
+    // In Packing mode the org_qr is pre-resolved: pass scannedQr = null
+    // and the resolved org_qr (`code` here) so the msk gate is bypassed
+    // and ONLY the sequence / net count / downstream guards (Rules 2-5)
+    // run against the resolved org_qr.
+    const scannedQrForMskLookup = isPackingSubmit ? null : code;
+    
     const gate = await validateStandardTransactionScan(
-      code,
+      scannedQrForMskLookup,
       userRef.current,
       innerQr,
-      qc
+      qc,
+      isPackingSubmit ? code : null
     );
     if (!gate.ok) {
       setPending((n) => Math.max(0, n - 1));
@@ -241,7 +297,7 @@ export default function TransactionsView() {
       setDualScan(createDualScanState(dualScanRef.current.enabled));
       setFocusSignal((n) => n + 1);
       setLastScan((prev) =>
-        prev && prev.value === code ? { ...prev, result: 'blocked' } : prev
+        prev && prev.value === scannedValue ? { ...prev, result: 'blocked' } : prev
       );
       notify(
         'error',
@@ -249,7 +305,9 @@ export default function TransactionsView() {
         gate.dualScan
           ? 'The Inner Box pair was rejected - both fields were cleared. Scan the Inner Box QR again.'
           : gate.offline
-            ? 'The msk table could not be reached - check your connection and try again.'
+            ? isPackingSubmit
+              ? 'A lookup table could not be reached - check your connection and try again.'
+              : 'The msk table could not be reached - check your connection and try again.'
             : 'Nothing was saved for this scan. Resolve the issue above and scan again.'
       );
       return;
@@ -263,7 +321,7 @@ export default function TransactionsView() {
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedCount());
     setLastScan((prevScan) =>
-      prevScan && prevScan.value === code ? { ...prevScan, result: result.status } : prevScan
+      prevScan && prevScan.value === scannedValue ? { ...prevScan, result: result.status } : prevScan
     );
     // Reset inputs/focus to the initial field for the next scan.
     setFocusSignal((n) => n + 1);
@@ -273,9 +331,11 @@ export default function TransactionsView() {
         innerQr
           ? `Recorded: ${gate.orgQr} + Inner ${innerQr} | ${record} | ${qc}`
           : `Recorded: ${gate.orgQr} | ${record} | ${qc}`,
-        innerQr
-          ? 'Dual-Scan pair recorded - the Inner Box QR was stored with the transaction.'
-          : `MSK scan ${code} resolved via the msk table.`
+        isPackingSubmit
+          ? 'Packing transaction recorded - the Inner Box QR was resolved to its Shoe QR and stored.'
+          : innerQr
+            ? 'Dual-Scan pair recorded - the Inner Box QR was stored with the transaction.'
+            : `MSK scan ${code} resolved via the msk table.`
       );
     } else {
       notify(
@@ -357,6 +417,12 @@ export default function TransactionsView() {
                 is recorded).
               </p>
             ) : null}
+            {isPackingMode ? (
+              <p className="mt-5 rounded-xl bg-indigo-50 px-4 py-2.5 text-xs font-medium text-indigo-800 ring-1 ring-indigo-200">
+                Packing single-scan mode - scan ONLY the Inner Box QR. The Shoe QR is resolved
+                automatically from the recorded pair in the system.
+              </p>
+            ) : null}
 
             <div className="mt-5">
               {method === 'camera' ? (
@@ -366,11 +432,13 @@ export default function TransactionsView() {
                   onScan={handleScan}
                   focusSignal={focusSignal}
                   placeholder={
-                    dualEnabled
-                      ? dualScan.stage === DUAL_SCAN_STAGES.INNER
-                        ? 'Scan 1 of 2 - Inner Box QR...'
-                        : 'Scan 2 of 2 - Shoe QR...'
-                      : 'Scan with the gun or type a code...'
+                    isPackingMode
+                      ? 'Scan the Inner Box QR...'
+                      : dualEnabled
+                        ? dualScan.stage === DUAL_SCAN_STAGES.INNER
+                          ? 'Scan 1 of 2 - Inner Box QR...'
+                          : 'Scan 2 of 2 - Shoe QR...'
+                        : 'Scan with the gun or type a code...'
                   }
                 />
               )}

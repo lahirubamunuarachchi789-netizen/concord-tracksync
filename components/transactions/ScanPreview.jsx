@@ -6,6 +6,7 @@ const SOURCE_BADGES = {
   camera: { label: 'Camera', cls: 'bg-sky-50 text-sky-700 ring-sky-200' },
   gun: { label: 'Scanner gun', cls: 'bg-purple-50 text-purple-700 ring-purple-200' },
   manual: { label: 'Typed entry', cls: 'bg-slate-100 text-slate-600 ring-slate-200' },
+  'inner-qr': { label: 'Inner Box QR', cls: 'bg-indigo-50 text-indigo-700 ring-indigo-200' },
 };
 
 /**
@@ -59,6 +60,10 @@ export default function ScanPreview({ scan, onClear }) {
             ) : scan.result === 'inner-captured' ? (
               <span className="inline-flex items-center rounded-full bg-indigo-50 px-2.5 py-0.5 text-[11px] font-semibold text-indigo-700 ring-1 ring-indigo-200">
                 Inner Box - scan 1 of 2
+              </span>
+            ) : scan.result === 'unlinked' ? (
+              <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">
+                Unlinked Inner Box - blocked
               </span>
             ) : scan.result === 'not-found' || scan.result === 'blocked' ? (
               <span className="inline-flex items-center rounded-full bg-red-50 px-2.5 py-0.5 text-[11px] font-semibold text-red-700 ring-1 ring-red-200">

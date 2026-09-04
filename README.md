@@ -99,6 +99,31 @@ Finishing lines record a Shoe QR **together with** its Inner Box QR
   non-Finishing scans persist `inner_qr = null`
   (column added by `supabase/transactions-schema.sql`).
 
+### Packing Department: single-scan Inner Box lookup
+
+For the **Packing** department the flow is the reverse of Dual-Scan — the Shoe QR is never
+scanned by the user ([`components/transactions/TransactionsView.jsx`](components/transactions/TransactionsView.jsx)):
+
+- **Single scan** — the user scans ONLY the **Inner Box QR** into the scan field (gun input
+  placeholder switches to *“Scan the Inner Box QR...”* and an info strip marks the mode).
+- **Automatic resolution** — `resolveOrgQrFromInnerBox()` in
+  [`lib/transactionsService.js`](lib/transactionsService.js) queries `data_updates` by
+  `inner_qr` to resolve the recorded Shoe QR (`qr_code`). When a box has been re-paired over
+  its lifetime the **latest** association wins (`ORDER BY created_at DESC LIMIT 1`).
+- **Unlinked Inner Box** — when no matching `org_qr` exists, the scan is rejected (nothing is
+  written) with the error: *"Unlinked Inner Box — This Inner Box QR has no recorded Shoe QR in
+  the system."* An unreachable `data_updates` table also blocks the scan, fail-safe, with an
+  honest offline message instead.
+- **Validation** — once the `org_qr` is resolved, ALL standard guards (Rules 1–5) run against
+  it for the Packing department, with the msk gate (Rule 1) bypassed and the Finishing
+  Dual-Scan Inner Box checks (V1–V3 + Duplicate Inner Box Guard) **skipped** — the scanned box
+  is by definition already registered in `data_updates` (exactly how the `org_qr` was
+  resolved). The preceding/current/parallel net count guards and the downstream department
+  sequence guard are fully enforced on the resolved `org_qr`.
+- **Record** — the insert is the standard `data_updates` shape: `qr_code` = resolved Shoe QR,
+  `inner_qr` = scanned Inner Box QR, `department` = Packing, plus `record_status`, `qc_status`,
+  `count` (+1 / −1 for `Return`), `created_by`, `created_at`.
+
 ### Inner Box pair validation (runs before the sequence guards)
 
 When an Inner Box QR is captured, three strict checks run on the Shoe scan
@@ -212,8 +237,8 @@ casing/format) — exactly what the standard-transaction sequence guards compare
 │   ├── supabaseClient.js     # Safe dynamic init from env vars (singleton)
 │   ├── authService.js        # loginUser() / registerUser() on "Loging Table"
 │   ├── departmentsService.js # departments fetch for the sign-up dropdown (exact values)
-│   ├── transactionGuards.js  # 4 strict scan guards (msk Active gate + sequence net counts)
-│   ├── transactionsService.js # msk lookup + data_updates insert/queue/read
+│   ├── transactionGuards.js  # 5 strict scan guards (msk Active gate + sequence net counts)
+│   ├── transactionsService.js # msk lookup + data_updates insert/queue/read + Packing Inner Box lookup
 │   ├── qrActivationService.js # PO fetch/add/delete + activation insert/queue
 │   └── session.js            # Client session store + auth cookie
 ├── tests/                    # Node built-in test runner suites (npm test)
