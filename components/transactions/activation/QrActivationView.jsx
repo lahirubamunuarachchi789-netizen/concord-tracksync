@@ -37,6 +37,7 @@ import {
   getActivatedCountSum,
   getQueuedActivationCount,
   getRecentActivations,
+  innerQrExistsInDataUpdates,
   retryQueuedActivations,
 } from '@/lib/qrActivationService';
 import { validateActivationScan } from '@/lib/qrActivationDualScan';
@@ -287,6 +288,7 @@ export default function QrActivationView() {
         innerQr,
         orgQr,
         getSrlSize: fetchSrlSizeForBoxCode,
+        innerQrExists: innerQrExistsInDataUpdates,
       });
       if (!gate.ok) {
         setAttention(true);

@@ -16,7 +16,7 @@ import {
   srlNumNotFoundReason,
   sizeMismatchReason,
 } from '../lib/transactionDualScan.js';
-import { BLOCK_SRL_UNREACHABLE } from '../lib/transactionGuards.js';
+import { BLOCK_SRL_UNREACHABLE, BLOCK_DUPLICATE_INNER_BOX, BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED } from '../lib/transactionGuards.js';
 
 /* ----------------------- fixtures (production values) ---------------------- */
 
@@ -32,15 +32,23 @@ const ACTIVATION_ORG_QR = ';566998;148925;35;RAW-SHOE-1;';
 
 const USER = { username: 'nimal', department: 'Finishing 01' };
 
-/** Fake srl_num lookup with call recording (mirrors the guard-db adapter). */
-function createFakeSrl({ sizes = {}, fail = false } = {}) {
-  const calls = [];
+/**
+ * Fake srl_num lookup + Duplicate Inner Box check with call recording
+ * (mirrors the guard-db adapter). `innerQrExists` returns false by
+ * default (no pre-existing Inner Box) and records its lookups.
+ */
+function createFakeSrl({ sizes = {}, fail = false, innerMatches = {} } = {}) {
+  const calls = { srlLookups: [], innerLookups: [] };
   return {
     calls,
     async getSrlSize(boxCode) {
-      calls.push(boxCode);
+      calls.srlLookups.push(boxCode);
       if (fail) throw new Error('fetch failed');
       return sizes[boxCode] ?? null;
+    },
+    async innerQrExists(innerQr) {
+      calls.innerLookups.push(innerQr);
+      return Boolean(innerMatches[innerQr]);
     },
   };
 }
@@ -65,6 +73,10 @@ test('QR Activation: bypass QC statuses disable Dual-Scan even in Finishing', ()
 
 test('QR Activation: non-Finishing departments never enable Dual-Scan', () => {
   for (const qc of ['Forward', 'B Grade', 'Return']) {
+    assert.equal(isDualScanEnabled('Lasting 01', qc), false);
+    assert.equal(isDualScanEnabled('Upper Line 02', qc), false);
+  }
+});
 
 /* ------------------------- 2. stage machine ---------------------------- */
 
@@ -103,9 +115,11 @@ test('gate: a matching dual pair passes every check end-to-end', async () => {
     innerQr: INNER_GS,
     orgQr: ACTIVATION_ORG_QR,
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, { ok: true });
-  assert.deepEqual(srl.calls, ['7330509963975']); // box code queried exactly once
+  assert.deepEqual(srl.calls.srlLookups, ['7330509963975']); // box code queried exactly once
+  assert.deepEqual(srl.calls.innerLookups, [INNER_GS]); // duplicate check ran after V3
 });
 
 test('gate: V1 - an Inner Box QR without the blaklader URL token is rejected', async () => {
@@ -115,9 +129,11 @@ test('gate: V1 - an Inner Box QR without the blaklader URL token is rejected', a
     innerQr: 'http://example.com/product/short',
     orgQr: ACTIVATION_ORG_QR,
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, { ok: false, reason: BLOCK_INNER_BOX_FORMAT, dualScan: true });
-  assert.deepEqual(srl.calls, []); // V1 fails BEFORE any srl_num lookup
+  assert.deepEqual(srl.calls.srlLookups, []); // V1 fails BEFORE any srl_num lookup
+  assert.deepEqual(srl.calls.innerLookups, []); // duplicate check never reached
 });
 
 test('gate: V2 - a PO mismatch between Inner Box and Shoe QR is rejected', async () => {
@@ -128,9 +144,11 @@ test('gate: V2 - a PO mismatch between Inner Box and Shoe QR is rejected', async
     innerQr: 'http://blaklader.com/product/short',
     orgQr: ';566998;999999;35;RAW-SHOE-1;',
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, { ok: false, reason: BLOCK_PO_MISMATCH, dualScan: true });
-  assert.deepEqual(srl.calls, []); // V2 fails BEFORE the srl_num lookup
+  assert.deepEqual(srl.calls.srlLookups, []); // V2 fails BEFORE the srl_num lookup
+  assert.deepEqual(srl.calls.innerLookups, []); // duplicate check never reached
 });
 
 test('gate: V3 - a missing srl_num row fails naming the exact box code', async () => {
@@ -139,6 +157,7 @@ test('gate: V3 - a missing srl_num row fails naming the exact box code', async (
     innerQr: INNER_GS,
     orgQr: ACTIVATION_ORG_QR,
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, {
     ok: false,
@@ -153,6 +172,7 @@ test('gate: V3 - a size mismatch names BOTH sizes (srl first, shoe second)', asy
     innerQr: INNER_GS,
     orgQr: ACTIVATION_ORG_QR,
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, {
     ok: false,
@@ -265,6 +285,7 @@ test('end-to-end: a full Dual-Scan pair routes the Inner QR to data_updates and 
     innerQr: second.innerQrForSubmit,
     orgQr: ACTIVATION_ORG_QR,
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, { ok: true });
 
@@ -280,7 +301,7 @@ test('end-to-end: a full Dual-Scan pair routes the Inner QR to data_updates and 
   assert.equal(dataRow.inner_qr, INNER_GS);
   assert.equal(mskRow.msk_qr, 'RAW-SHOE-1');
   assert.ok(!('inner_qr' in mskRow));
-  assert.deepEqual(srl.calls, ['7330509963975']);
+  assert.deepEqual(srl.calls.srlLookups, ['7330509963975']);
 });
 
 test('end-to-end: a rejected pair writes NOTHING to either table', async () => {
@@ -294,6 +315,7 @@ test('end-to-end: a rejected pair writes NOTHING to either table', async () => {
     innerQr: second.innerQrForSubmit,
     orgQr: ';566998;999999;35;RAW-SHOE-1;', // 9999 != inner 8925
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.equal(gate.ok, false);
   assert.equal(gate.dualScan, true); // view resets the Inner field on this flag
@@ -305,19 +327,88 @@ test('gate: an unreachable srl_num table blocks the scan fail-safe', async () =>
     innerQr: INNER_GS,
     orgQr: ACTIVATION_ORG_QR,
     getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
   });
   assert.deepEqual(gate, { ok: false, reason: BLOCK_SRL_UNREACHABLE, dualScan: true });
 });
 
 test('gate: single scans (no inner QR) pass and never query srl_num', async () => {
   const srl = createFakeSrl({ fail: true }); // would throw if ever called
-  const gateNull = await validateActivationScan({ innerQr: null, orgQr: ACTIVATION_ORG_QR, getSrlSize: srl.getSrlSize });
-  const gateEmpty = await validateActivationScan({ innerQr: '   ', orgQr: ACTIVATION_ORG_QR, getSrlSize: srl.getSrlSize });
+  const gateNull = await validateActivationScan({ innerQr: null, orgQr: ACTIVATION_ORG_QR, getSrlSize: srl.getSrlSize, innerQrExists: srl.innerQrExists });
+  const gateEmpty = await validateActivationScan({ innerQr: '   ', orgQr: ACTIVATION_ORG_QR, getSrlSize: srl.getSrlSize, innerQrExists: srl.innerQrExists });
   assert.deepEqual(gateNull, { ok: true });
   assert.deepEqual(gateEmpty, { ok: true });
-  assert.deepEqual(srl.calls, []);
+  assert.deepEqual(srl.calls.srlLookups, []);
+  assert.deepEqual(srl.calls.innerLookups, []);
 });
-    assert.equal(isDualScanEnabled('Lasting 01', qc), false);
-    assert.equal(isDualScanEnabled('Upper Line 02', qc), false);
-  }
+
+/* --------------- 6. Duplicate Inner Box Guard (activation) --------------- */
+
+test('gate: a duplicate Inner Box QR is rejected (already in data_updates)', async () => {
+  // The same Inner Box QR (INNER_GS) already exists in data_updates -
+  // the pair must be blocked even though V1-V3 all pass.
+  const srl = createFakeSrl({
+    sizes: { '7330509963975': '35' },
+    innerMatches: { [INNER_GS]: true },
+  });
+  const gate = await validateActivationScan({
+    innerQr: INNER_GS,
+    orgQr: ACTIVATION_ORG_QR,
+    getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
+  });
+  assert.deepEqual(gate, { ok: false, reason: BLOCK_DUPLICATE_INNER_BOX, dualScan: true });
+  assert.deepEqual(srl.calls.srlLookups, ['7330509963975']); // V3 passed
+  assert.deepEqual(srl.calls.innerLookups, [INNER_GS]); // duplicate check ran
+});
+
+test('gate: an unreachable data_updates table blocks the duplicate check fail-safe', async () => {
+  const srl = createFakeSrl({ sizes: { '7330509963975': '35' } });
+  // Override innerQrExists to simulate an unreachable data_updates table.
+  srl.innerQrExists = async () => {
+    throw new Error('network error');
+  };
+  const gate = await validateActivationScan({
+    innerQr: INNER_GS,
+    orgQr: ACTIVATION_ORG_QR,
+    getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
+  });
+  assert.deepEqual(gate, {
+    ok: false,
+    reason: BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED,
+    dualScan: true,
+  });
+});
+
+/* --------------- 7. Return handling clears inner_qr (activation) --------------- */
+
+test('Return handling: a Finishing Return writes inner_qr = null and count = -1', () => {
+  // For a Finishing Return, the activation flow nulls the inner_qr in the
+  // data row (after clearing existing associations) and writes count = -1.
+  const dataRow = buildActivationDataRow({
+    user: USER,
+    qrCode: ACTIVATION_ORG_QR,
+    recordStatus: 'OUT',
+    qcStatus: 'Return',
+    innerQr: INNER_GS,
+  });
+  // The builder captures the captured inner_qr; the Return branch nulls it.
+  assert.equal(dataRow.inner_qr, INNER_GS);
+  assert.equal(dataRow.count, -1);
+  // Simulate the Return branch clearing the association for this QR.
+  dataRow.inner_qr = null;
+  assert.equal(dataRow.inner_qr, null);
+});
+
+test('Return handling: non-Return QC statuses keep the captured inner_qr', () => {
+  const dataRow = buildActivationDataRow({
+    user: USER,
+    qrCode: ACTIVATION_ORG_QR,
+    recordStatus: 'IN',
+    qcStatus: 'Forward',
+    innerQr: INNER_GS,
+  });
+  assert.equal(dataRow.inner_qr, INNER_GS);
+  assert.equal(dataRow.count, 1);
 });

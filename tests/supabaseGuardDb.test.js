@@ -25,6 +25,9 @@ function createMockSupabase(tables = {}) {
         record.filters.push(['in', column, values]);
         return chain;
       },
+      limit() {
+        return chain;
+      },
       then(onFulfilled, onRejected) {
         const payload = tables[tableName] ?? { data: [], error: null };
         return Promise.resolve(payload).then(onFulfilled, onRejected);
@@ -105,4 +108,24 @@ test('every adapter method rethrows PostgREST errors for the guards to block on'
   await assert.rejects(() => db.listMskRowsByMskQr('MSK-1'), /does not exist/);
   await assert.rejects(() => db.listDepartments(), /permission denied/);
   await assert.rejects(() => db.getNetCount('ORG-1', ['D1']), /network error/);
+});
+
+test('innerQrExistsInDataUpdates queries data_updates.id by inner_qr with limit 1', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: { data: [{ id: 99 }], error: null },
+  });
+  const db = createSupabaseGuardDb(client);
+  const exists = await db.innerQrExistsInDataUpdates('INNER-X');
+  assert.equal(exists, true);
+  assert.equal(queries[0].table, 'data_updates');
+  assert.equal(queries[0].select, 'id');
+  assert.deepEqual(queries[0].filters, [['eq', 'inner_qr', 'INNER-X']]);
+});
+
+test('innerQrExistsInDataUpdates returns false when no row matches', async () => {
+  const { client } = createMockSupabase({
+    data_updates: { data: [], error: null },
+  });
+  const db = createSupabaseGuardDb(client);
+  assert.equal(await db.innerQrExistsInDataUpdates('INNER-X'), false);
 });

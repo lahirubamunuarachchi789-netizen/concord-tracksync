@@ -18,6 +18,8 @@ import {
 import {
   validateStandardScan,
   BLOCK_SRL_UNREACHABLE,
+  BLOCK_DUPLICATE_INNER_BOX,
+  BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED,
 } from '../lib/transactionGuards.js';
 
 /* ------- fixture QRs (digit positions hand-verified) ---------------- */
@@ -261,8 +263,9 @@ function createFakeDb({
   counts = {},
   srlSizes = SRL_SIZES,
   failSrl = false,
+  existingInner = {},
 } = {}) {
-  const calls = { srlLookups: [], netCountQueries: [] };
+  const calls = { srlLookups: [], netCountQueries: [], innerLookups: [] };
   return {
     calls,
     async listMskRowsByMskQr(mskQr) {
@@ -279,6 +282,10 @@ function createFakeDb({
       calls.srlLookups.push(boxCode);
       if (failSrl) throw new Error('fetch failed');
       return srlSizes[boxCode] ?? null;
+    },
+    async innerQrExistsInDataUpdates(innerQr) {
+      calls.innerLookups.push(innerQr);
+      return Boolean(existingInner[innerQr]);
     },
   };
 }
@@ -348,7 +355,48 @@ test('Orchestrator: single scans (no inner QR) never query srl_num', async () =>
   assert.deepEqual(db.calls.srlLookups, []);
 });
 
+/* --------------- Duplicate Inner Box Guard (standard transactions) --------------- */
+
+test('Orchestrator: a duplicate Inner Box QR is rejected (already in data_updates)', async () => {
+  // The same Inner Box QR (INNER_A) already exists in data_updates -
+  // the pair must be blocked even though V1-V3 all pass.
+  const db = createFakeDb({
+    mskRows: { 'MSK-1': MSK_ACTIVE },
+    existingInner: { [INNER_A]: true },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-1',
+    user: SEQ1_USER,
+    db,
+    innerQr: INNER_A,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_DUPLICATE_INNER_BOX);
+  assert.equal(result.dualScan, true); // view resets the Inner field
+  assert.deepEqual(db.calls.srlLookups, ['4567890123456']); // V3 passed
+  assert.deepEqual(db.calls.innerLookups, [INNER_A]); // duplicate check ran
+});
+
+test('Orchestrator: an unreachable data_updates table blocks the duplicate check fail-safe', async () => {
+  const db = createFakeDb({ mskRows: { 'MSK-1': MSK_ACTIVE } });
+  // Override innerQrExistsInDataUpdates to simulate an unreachable table.
+  db.innerQrExistsInDataUpdates = async () => {
+    throw new Error('network error');
+  };
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-1',
+    user: SEQ1_USER,
+    db,
+    innerQr: INNER_A,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED);
+  assert.equal(result.dualScan, true);
+});
+
 /* ------------------ failed-scan reset contract ---------------------- */
+
+
 
 test('Failed-scan reset contract: createDualScanState clears the pair and rearms stage 1', () => {
   // The view calls exactly this on ANY validation failure, then bumps
