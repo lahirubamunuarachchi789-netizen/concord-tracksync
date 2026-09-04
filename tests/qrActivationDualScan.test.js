@@ -18,6 +18,10 @@ import {
 } from '../lib/transactionDualScan.js';
 import { BLOCK_SRL_UNREACHABLE, BLOCK_DUPLICATE_INNER_BOX, BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED } from '../lib/transactionGuards.js';
 import { evaluateCutQtyLimit } from '../lib/activationCountGuard.js';
+import {
+  resolveNextDepartments,
+  evaluateDownstreamGuard,
+} from '../lib/activationDeptGuard.js';
 
 /* ----------------------- fixtures (production values) ---------------------- */
 
@@ -488,4 +492,74 @@ test('count guard: zero floor applies even when no cut_qty is configured', () =>
   assert.equal(verdict.allowed, false);
   assert.equal(verdict.negative, true);
   assert.equal(verdict.cutQty, null);
+});
+
+/* --------------- 9. Downstream department sequence guard (Rule 5) ---- */
+
+// Departments mapping where the user's department has a downstream next
+// department (mirrors the standard-rules fixture pattern).
+const DEPT_ROWS_WITH_NEXT = [
+  { id: 1, department: 'Lasting 01', sequence: 3 },
+  { id: 2, department: 'Lasting 02', sequence: 3 },
+  { id: 7, department: 'Finishing 01', sequence: 5 },
+  { id: 8, department: 'Finishing 02', sequence: 5 },
+];
+
+test('downstream guard: passes when the next department net count is 0', () => {
+  const { nextDepartments } = resolveNextDepartments(
+    DEPT_ROWS_WITH_NEXT,
+    'Lasting 01'
+  );
+  // nextDepartments spans the whole next sequence level.
+  assert.deepEqual(nextDepartments, ['Finishing 01', 'Finishing 02']);
+  const v = evaluateDownstreamGuard({
+    nextDepartments,
+    downstreamNet: 0,
+  });
+  assert.equal(v.allowed, true);
+  assert.equal(v.reason, null);
+  assert.equal(v.downstreamNet, 0);
+});
+
+test('downstream guard: blocks when the next department net count is +1', () => {
+  const { nextDepartments } = resolveNextDepartments(
+    DEPT_ROWS_WITH_NEXT,
+    'Lasting 01'
+  );
+  const v = evaluateDownstreamGuard({
+    nextDepartments,
+    downstreamNet: 1,
+  });
+    assert.equal(v.allowed, false);
+  assert.equal(v.downstreamNet, 1);
+  // The message interpolates the downstream department name(s).
+  assert.equal(
+    v.reason,
+    'Scan blocked — This item has already been processed in the next department (Finishing 01, Finishing 02)! Undo/Return the next department first!'
+  );
+  assert.match(v.reason, /Finishing 01/);
+});
+
+test('downstream guard: passes when there is no next department (final dept)', () => {
+  // A lone department with no higher sequence level.
+  const { nextDepartments } = resolveNextDepartments(
+    [{ id: 1, department: 'Solo Finish', sequence: 9 }],
+    'Solo Finish'
+  );
+  assert.deepEqual(nextDepartments, []);
+  const v = evaluateDownstreamGuard({
+    nextDepartments,
+    downstreamNet: 0,
+  });
+  assert.equal(v.allowed, true);
+  assert.equal(v.reason, null);
+});
+
+test('downstream guard: found=false when the user department is unmapped', () => {
+  const { found, nextDepartments } = resolveNextDepartments(
+    DEPT_ROWS_WITH_NEXT,
+    'No Such Dept'
+  );
+  assert.equal(found, false);
+  assert.deepEqual(nextDepartments, []);
 });

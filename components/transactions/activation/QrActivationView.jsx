@@ -6,11 +6,17 @@
 // camera frame) auto-activates instantly with the locked
 // parameters - no submit button, hands-free continuous flow.
 // Finishing departments (01-03) run the same Dual-Scan process as
-// Standard Transactions: scan 1 captures the Inner Box QR, scan 2 on
-// the Shoe QR validates the pair (V1 URL token, V2 PO match, V3
-// srl_num size match) before the cut_qty guard and auto-activates -
-// data_updates gets ALL fields incl. inner_qr, msk gets the standard
-// activation marking only. Any failure resets the pair globally.
+// Standard Transactions: scan 1 captures the Inner Box QR, scan 2 on the
+// Shoe QR validates the pair (V1 URL token, V2 PO match, V3 srl_num size
+// match) before the downstream department sequence guard, the cut_qty
+// guard and auto-activates - data_updates gets ALL fields incl.
+// inner_qr, msk gets the standard activation marking only. Any failure
+// resets the pair globally.
+//
+// Downstream department sequence guard (Rule 5, Finishing 01-03): the
+// shoe org_qr must not have a non-zero net count in the NEXT department;
+// a non-zero downstream net blocks the scan with a global reset until
+// the next department is cleared.
 // ============================================================
 
 import { useCallback, useEffect, useRef, useState } from 'react';
@@ -30,6 +36,7 @@ import SizeSelect from './SizeSelect';
 import {
   buildQrCode,
   createActivation,
+  checkDownstreamNetCount,
   evaluateCutQtyLimit,
   fetchCutQtyForPoSize,
   fetchMqcForPo,
@@ -267,23 +274,31 @@ export default function QrActivationView() {
   }
 
   /**
-   * Validates one submit before anything is written, in this order:
+      * Validates one submit before anything is written, in this order:
    *   1. Dual-Scan Inner Box checks (V1 URL token, V2 PO match, V3
    *      srl_num size match) when an Inner Box QR was captured - a
    *      mismatched pair must never reach any other check or write.
+   *   1b. Downstream Department Sequence Guard (Rule 5, Finishing
+   *      01-03): the shoe org_qr's net count in the next department of
+   *      the configured sequence MUST be 0 - blocked otherwise with a
+   *      global reset. Skipped when there is no downstream department.
    *   2. cut_qty limit guard - projected_total = current_sum(count) +
    *      scanCount(1, or -1 for Return) must stay within cut_qty;
    *      blocked completely (no write, amber flash, explicit toast)
    *      when the projected total would exceed cut_qty.
    * On success the record is auto-activated exactly as before.
    */
-  async function validateAndActivate(code, source, at, po, size, record, qc, innerQr = null) {
+    async function validateAndActivate(code, source, at, po, size, record, qc, innerQr = null) {
+    // The shoe org_qr is the formatted ";mqc;po;size;scanned;" string.
+    // It is required both for the Dual-Scan pair checks and the
+    // downstream department sequence guard below, so resolve it once.
+    const mqcResolved = await fetchMqcForPo(po, size);
+    const orgQr = buildQrCode(mqcResolved, po, size, code);
+
     // 1. Dual-Scan pair checks. The shoe org_qr is the formatted
     //    ";mqc;po;size;scanned;" string, so V2/V3 compare against
     //    exactly the values that will be stored.
     if (innerQr) {
-      const mqc = await fetchMqcForPo(po, size);
-      const orgQr = buildQrCode(mqc, po, size, code);
       const gate = await validateActivationScan({
         innerQr,
         orgQr,
@@ -305,6 +320,28 @@ export default function QrActivationView() {
         );
         return;
       }
+    }
+
+    // 1b. Downstream Department Sequence Guard (Rule 5 - Finishing 01-03).
+    // The shoe org_qr must not have a non-zero net count in the next
+    // department of the configured sequence - the item cannot be
+    // activated here while it is already processed downstream.
+    // Bypassed (resolves to "allowed") when there is no downstream
+    // department (final department in the workflow).
+    const downstream = await checkDownstreamNetCount(orgQr, user);
+    if (!downstream.allowed) {
+      setAttention(true);
+      window.setTimeout(() => setAttention(false), 2200);
+      resetDualPairAfterFailure();
+      setLastScan((prev) =>
+        prev && prev.value === code ? { ...prev, result: 'blocked' } : prev
+      );
+      notify(
+        'error',
+        downstream.reason,
+        'This scan was not saved - clear the downstream department first.'
+      );
+      return;
     }
 
     // 2. cut_qty limit guard (reads only - nothing written yet).

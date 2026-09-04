@@ -34,6 +34,15 @@ const PREVIOUS_DEPTS = [
 const USER = { username: 'nimal', department: 'Lasting 01' };
 const USER_SEQ_1 = { username: 'kamal', department: 'Upper Line 02' };
 
+// A department (seq 3) whose next department (seq 5 'Finishing 01') exists -
+// used by the downstream-department sequence guard (Rule 5) tests.
+const DEPARTMENTS_WITH_DOWNSTREAM = [
+  ...DEPARTMENTS,
+  { id: 7, department: 'Finishing 01', sequence: 5 },
+  { id: 8, department: 'Finishing 02', sequence: 5 },
+];
+const USER_WITH_DOWNSTREAM = { username: 'nimal', department: 'Lasting 01' };
+
 // Previous sequence level already nets exactly +1 (Rule 2 satisfied).
 const PREV_OK = { 'ORG-001|Upper Line 04': 1 };
 
@@ -185,8 +194,9 @@ test('Rule 2: skipped at sequence 1 - scan proceeds without prior counts', async
   });
   const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER_SEQ_1, db });
   assert.equal(result.ok, true);
-  // Only rules 3 and 4 ran: current dept query + parallel dept query.
-  assert.equal(db.calls.netCountQueries.length, 2);
+  // Rules 3 + 4 + 5 ran: current dept query + parallel dept query +
+  // downstream dept query (Upper Line 02 is seq 1, downstream is seq 3).
+  assert.equal(db.calls.netCountQueries.length, 3);
 });
 
 test('Rule 2: blocks BEFORE rules 3/4 when it fails (single net query)', async () => {
@@ -404,5 +414,58 @@ test('Safety gate: blocks when the user department is not in departments', async
   });
   assert.equal(result.ok, false);
   assert.equal(result.reason, BLOCK_DEPARTMENT_UNMAPPED);
+});
+
+/* ----------- Rule 5: downstream department sequence guard ---------- */
+
+test('Rule 5: passes when the next department net count is 0', async () => {
+  const db = createFakeDb({
+    departments: DEPARTMENTS_WITH_DOWNSTREAM,
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK }, // downstream 'Finishing 01' defaults to 0
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER_WITH_DOWNSTREAM,
+    db,
+  });
+  assert.equal(result.ok, true);
+  // Rule 5 ran and queried the downstream department.
+  const rule5Query = db.calls.netCountQueries[3];
+  assert.deepEqual(rule5Query.departmentNames, ['Finishing 01', 'Finishing 02']);
+});
+
+test('Rule 5: blocks when the next department net count is +1', async () => {
+  const db = createFakeDb({
+    departments: DEPARTMENTS_WITH_DOWNSTREAM,
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK, 'ORG-001|Finishing 01': 1 },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER_WITH_DOWNSTREAM,
+    db,
+  });
+    assert.equal(result.ok, false);
+  // The reason is the interpolated downstream message.
+  assert.equal(
+    result.reason,
+    'Scan blocked — This item has already been processed in the next department (Finishing 01, Finishing 02)! Undo/Return the next department first!'
+  );
+});
+
+test('Rule 5: passes when there is no next department (final department)', async () => {
+  // Original DEPARTMENTS: Highest Line (seq 3) has no seq above it.
+  const db = createFakeDb({
+    departments: DEPARTMENTS,
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+  });
+  assert.equal(result.ok, true);
 });
 
