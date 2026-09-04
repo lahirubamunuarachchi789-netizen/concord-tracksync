@@ -176,6 +176,14 @@ The same Dual-Scan process is enabled for the **QR Activation** tab
 - **Flow** — Scan 1 captures the **Inner Box QR** (the `InnerBoxQrField` populates, focus
   shifts), Scan 2 on the **Shoe QR** runs the V1-V3 pair checks (above) against the formatted
   activation string `;mqc;po;size;scanned;`, then the `cut_qty` limit guard, then auto-activates.
+- **msk status gate** — activation is allowed ONLY when the scanned QR's `msk` row is in the
+  `Packed` lifecycle status (`checkActivationMskStatus`, evaluated before anything is written):
+  `Active` — the default status of an un-activated floor mapping — any other status, a missing
+  row and an unreachable `msk` table all block the scan with *"Activation Blocked — This QR
+  code is not in 'Packed' status (Current status: {status})!"* (the unreachable-table case
+  blocks fail-safe with its own "could not be verified" message). `Packed` is set
+  automatically when the shoe's Packing net count hits +1, so a shoe can be activated exactly
+  once, after packing.
 - **Data routing** — `data_updates` receives the **full** transaction field set: `qr_code`
   (the formatted org_qr), `inner_qr` (the captured Inner Box QR, `null` for single scans),
   `record_status`, `qc_status`, `department`, `count`, `created_by`, `created_at` — exactly the

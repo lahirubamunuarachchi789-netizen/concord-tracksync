@@ -275,6 +275,9 @@ export default function QrActivationView() {
 
   /**
       * Validates one submit before anything is written, in this order:
+   *   0. msk lifecycle status gate (enforced by createActivation):
+   *      the scanned QR's msk row MUST be in the 'Packed' status -
+   *      'Active' or any other status blocks the activation.
    *   1. Dual-Scan Inner Box checks (V1 URL token, V2 PO match, V3
    *      srl_num size match) when an Inner Box QR was captured - a
    *      mismatched pair must never reach any other check or write.
@@ -380,6 +383,24 @@ export default function QrActivationView() {
     setPending((n) => n + 1);
     const result = await createActivation(userRef.current, code, po, size, record, qc, innerQr);
     setPending((n) => Math.max(0, n - 1));
+
+    if (result.status === 'blocked') {
+      // msk lifecycle status gate: ONLY 'Packed' QRs can be activated.
+      // Nothing was written to data_updates or msk.
+      setLastScan((prevScan) =>
+        prevScan && prevScan.value === code ? { ...prevScan, result: 'blocked' } : prevScan
+      );
+      setAttention(true);
+      window.setTimeout(() => setAttention(false), 2200);
+      // GLOBAL reset: nothing was written - start a fresh pair.
+      resetDualPairAfterFailure();
+      notify(
+        'error',
+        result.reason,
+        "Only shoes whose msk status is 'Packed' can be activated. Nothing was written to data_updates or msk."
+      );
+      return;
+    }
 
     if (result.status === 'duplicate') {
       setLastScan((prevScan) =>
