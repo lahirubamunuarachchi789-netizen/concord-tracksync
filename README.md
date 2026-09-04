@@ -128,6 +128,26 @@ When an Inner Box QR is captured, three strict checks run on the Shoe scan
 guards), the captured Inner Box QR is discarded, the Inner Box field is cleared and focus
 returns to it for a completely fresh pair.
 
+The same Dual-Scan process is enabled for the **QR Activation** tab
+([`lib/qrActivationDualScan.js`](lib/qrActivationDualScan.js), wired into
+[`components/transactions/activation/QrActivationView.jsx`](components/transactions/activation/QrActivationView.jsx)):
+
+- **Trigger** — identical condition: a Finishing `01`/`02`/`03` department with a QC status
+  that is NOT `B Grade` / `C Grade` / `Lab Testing`. The locked PO + size stay as they are; only
+  the capture flow changes from "every scan activates" to the two-scan pair.
+- **Flow** — Scan 1 captures the **Inner Box QR** (the `InnerBoxQrField` populates, focus
+  shifts), Scan 2 on the **Shoe QR** runs the V1-V3 pair checks (above) against the formatted
+  activation string `;mqc;po;size;scanned;`, then the `cut_qty` limit guard, then auto-activates.
+- **Data routing** — `data_updates` receives the **full** transaction field set: `qr_code`
+  (the formatted org_qr), `inner_qr` (the captured Inner Box QR, `null` for single scans),
+  `record_status`, `qc_status`, `department`, `count`, `created_by`, `created_at` — exactly the
+  standard-transaction shape. The `msk` duplicate-guard row gets **standard shoe activation data
+  only** (`msk_qr` = raw scanned Shoe QR, `org_qr` = formatted string); `inner_qr` is never
+  written to `msk`.
+- **Global failure reset** — identical to standard transactions: any V1-V3 failure, cut_qty
+  block, or duplicate discards the captured Inner Box QR and re-arms focus on the Inner Box
+  field for a fresh pair.
+
 ## Registration: dynamic Department dropdown
 
 The sign-up form (`components/AuthCard.jsx`) no longer uses a hardcoded department list.

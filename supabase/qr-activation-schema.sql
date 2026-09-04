@@ -40,6 +40,9 @@ create table if not exists pod (
 --    Live shape (verified with a real insert + cleanup):
 --      id           serial primary key
 --      qr_code      text   ";mqc;po;size;scanned;"
+--      inner_qr     text   Inner Box QR captured by the Dual-Scan process
+--                         (Finishing departments; NULL for single scans and
+--                          bypassed QC statuses)
 --      record_status text  (IN | OUT)
 --      qc_status    text   (Forward | B Grade | C Grade |
 --                           Lab Testing | Return | Reworked)
@@ -50,6 +53,7 @@ create table if not exists pod (
 create table if not exists data_updates (
   id            serial primary key,
   qr_code       text not null,
+  inner_qr      text,
   record_status text,
   qc_status     text,
   created_at    timestamptz not null default now(),
