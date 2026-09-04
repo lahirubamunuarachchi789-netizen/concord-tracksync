@@ -393,6 +393,43 @@ test('Orchestrator: an unreachable data_updates table blocks the duplicate check
   assert.equal(result.reason, BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED);
   assert.equal(result.dualScan, true);
 });
+test('Orchestrator: QC Return BYPASSES the Duplicate Inner Box Guard (registered box allowed through)', async () => {
+  // The same Inner Box QR is already registered in data_updates, but the
+  // QC status is 'Return' - the Return service layer clears the inner_qr
+  // association, so a registered box MUST be allowed through.
+  const db = createFakeDb({
+    mskRows: { 'MSK-1': MSK_ACTIVE },
+    existingInner: { [INNER_A]: true }, // box already registered
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-1',
+    user: SEQ1_USER,
+    db,
+    innerQr: INNER_A,
+    qcStatus: 'Return',
+  });
+  assert.equal(result.ok, true); // passes validation
+  assert.equal(result.orgQr, SHOE_A);
+  assert.deepEqual(db.calls.srlLookups, ['4567890123456']); // V3 STILL ran
+  assert.deepEqual(db.calls.innerLookups, []); // duplicate check bypassed
+});
+
+test('Orchestrator: non-Return QC statuses still enforce the Duplicate Inner Box Guard', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-1': MSK_ACTIVE },
+    existingInner: { [INNER_A]: true },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-1',
+    user: SEQ1_USER,
+    db,
+    innerQr: INNER_A,
+    qcStatus: 'Forward', // NOT Return -> guard enforced
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_DUPLICATE_INNER_BOX);
+  assert.deepEqual(db.calls.innerLookups, [INNER_A]); // check ran
+});
 
 /* ------------------ failed-scan reset contract ---------------------- */
 

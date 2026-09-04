@@ -380,6 +380,41 @@ test('gate: an unreachable data_updates table blocks the duplicate check fail-sa
     dualScan: true,
   });
 });
+test('gate: QC Return BYPASSES the Duplicate Inner Box Guard (registered box allowed through)', async () => {
+  // The same Inner Box QR is already registered in data_updates, but the
+  // QC status is 'Return' - the Return service layer clears the inner_qr
+  // association, so a registered box MUST be allowed through.
+  const srl = createFakeSrl({
+    sizes: { '7330509963975': '35' },
+    innerMatches: { [INNER_GS]: true }, // box already registered
+  });
+  const gate = await validateActivationScan({
+    innerQr: INNER_GS,
+    orgQr: ACTIVATION_ORG_QR,
+    getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
+    qcStatus: 'Return',
+  });
+  assert.deepEqual(gate, { ok: true }); // passes validation
+  assert.deepEqual(srl.calls.srlLookups, ['7330509963975']); // V3 STILL ran
+  assert.deepEqual(srl.calls.innerLookups, []); // duplicate check bypassed
+});
+
+test('gate: non-Return QC statuses still enforce the Duplicate Inner Box Guard', async () => {
+  const srl = createFakeSrl({
+    sizes: { '7330509963975': '35' },
+    innerMatches: { [INNER_GS]: true },
+  });
+  const gate = await validateActivationScan({
+    innerQr: INNER_GS,
+    orgQr: ACTIVATION_ORG_QR,
+    getSrlSize: srl.getSrlSize,
+    innerQrExists: srl.innerQrExists,
+    qcStatus: 'Forward', // NOT Return -> guard enforced
+  });
+  assert.deepEqual(gate, { ok: false, reason: BLOCK_DUPLICATE_INNER_BOX, dualScan: true });
+  assert.deepEqual(srl.calls.innerLookups, [INNER_GS]); // check ran
+});
 
 /* --------------- 7. Return handling clears inner_qr (activation) --------------- */
 

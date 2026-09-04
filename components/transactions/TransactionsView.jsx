@@ -226,7 +226,8 @@ export default function TransactionsView() {
     const gate = await validateStandardTransactionScan(
       code,
       userRef.current,
-      innerQr
+      innerQr,
+      qc
     );
     if (!gate.ok) {
       setPending((n) => Math.max(0, n - 1));

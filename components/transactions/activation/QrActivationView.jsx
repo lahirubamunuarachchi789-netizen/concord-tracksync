@@ -289,6 +289,7 @@ export default function QrActivationView() {
         orgQr,
         getSrlSize: fetchSrlSizeForBoxCode,
         innerQrExists: innerQrExistsInDataUpdates,
+        qcStatus: qc,
       });
       if (!gate.ok) {
         setAttention(true);
