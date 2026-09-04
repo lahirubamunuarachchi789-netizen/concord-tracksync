@@ -66,9 +66,13 @@ Every **Standard Transactions** scan runs four strict guards BEFORE anything is 
    the net sum of `count` for the resolved `org_qr` across **all** departments on the highest
    sequence strictly below the user's sequence must be exactly **+1**:
    *“Scan blocked — Previous department sequence scan is incomplete or net count is not +1!”*
-3. **Current department net count** (`data_updates`): the net sum of `count` for the `org_qr`
-   in the user's own department must be **0** before a new scan:
-   *“Scan blocked — QR code has already been scanned in this department (Net count is already +1)!”*
+3. **Current department net count (prospective)** (`data_updates`): the net **after** this scan
+   (`current net + the scan's ±1 increment`, −1 for `Return`) must stay between **0 and 1**
+   inclusive. A Return on a +1 net clears it to 0 (allowed — a returned item can be re-scanned);
+   a Pass on a +1 net (prospective 2) is blocked with
+   *"Scan blocked — QR code has already been scanned in this department (Net count is already +1)!"*;
+   a Return on a 0 net (prospective −1) is blocked with
+   *"Scan blocked — QR code has no Net Count in this department (a Return would drive net count below zero)!"*
 4. **Parallel sequence mutual exclusion** (`departments` + `data_updates`): departments sharing
    the user's exact `sequence` must hold a net count of **0** for the `org_qr`:
    *“Scan blocked — QR code has an active count in a parallel department with the same sequence!”*

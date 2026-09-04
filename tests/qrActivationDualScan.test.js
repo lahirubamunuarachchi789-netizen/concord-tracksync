@@ -17,6 +17,7 @@ import {
   sizeMismatchReason,
 } from '../lib/transactionDualScan.js';
 import { BLOCK_SRL_UNREACHABLE, BLOCK_DUPLICATE_INNER_BOX, BLOCK_DUPLICATE_INNER_BOX_CHECK_FAILED } from '../lib/transactionGuards.js';
+import { evaluateCutQtyLimit } from '../lib/activationCountGuard.js';
 
 /* ----------------------- fixtures (production values) ---------------------- */
 
@@ -446,4 +447,45 @@ test('Return handling: non-Return QC statuses keep the captured inner_qr', () =>
   });
   assert.equal(dataRow.inner_qr, INNER_GS);
   assert.equal(dataRow.count, 1);
+});
+
+/* --------------- 8. Prospective count guard (QR Activation) --------------- */
+
+test('count guard: Return on a current count +1 PASSES and nets 0 (prospective)', () => {
+  // projected = 1 + (-1) = 0 - within [0, cut_qty] - allowed. This is the
+  // QR Activation counterpart of the Standard Transactions prospective fix.
+  const verdict = evaluateCutQtyLimit(1, 50, -1);
+  assert.equal(verdict.allowed, true);
+  assert.equal(verdict.negative, false);
+  assert.equal(verdict.projected, 0);
+});
+
+test('count guard: Return on a current count 0 blocks (0 error - would go negative)', () => {
+  // projected = 0 + (-1) = -1 - below zero - blocked with the negative flag.
+  const verdict = evaluateCutQtyLimit(0, 50, -1);
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.negative, true);
+  assert.equal(verdict.projected, -1);
+});
+
+test('count guard: Pass on a current count +1 with cut_qty 1 blocks (upper bound)', () => {
+  // projected = 1 + 1 = 2 > cut_qty 1 - the upper bound blocks the +1 scan.
+  const verdict = evaluateCutQtyLimit(1, 1, 1);
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.negative, false);
+  assert.equal(verdict.projected, 2);
+});
+
+test('count guard: Pass within the cut_qty limit is allowed', () => {
+  const verdict = evaluateCutQtyLimit(3, 50, 1);
+  assert.equal(verdict.allowed, true);
+  assert.equal(verdict.negative, false);
+  assert.equal(verdict.projected, 4);
+});
+
+test('count guard: zero floor applies even when no cut_qty is configured', () => {
+  const verdict = evaluateCutQtyLimit(0, null, -1);
+  assert.equal(verdict.allowed, false);
+  assert.equal(verdict.negative, true);
+  assert.equal(verdict.cutQty, null);
 });

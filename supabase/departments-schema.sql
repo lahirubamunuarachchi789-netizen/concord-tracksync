@@ -2,7 +2,8 @@
 -- Concord TrackSync - Supabase schema for the DEPARTMENTS mapping
 -- Powers the strict standard-transaction sequence guards:
 --   Rule 2: preceding sequence net count must be exactly +1
---   Rule 3: current department net count must be 0
+--   Rule 3: prospective net count (current + scan +/-1) must stay
+--           between 0 and 1 inclusive (-1 scans are QC Returns)
 --   Rule 4: parallel departments (SAME sequence) net count must be 0
 -- Multiple departments share one sequence (e.g. Sequence 1 =
 -- 'Upper Line 01'..'Upper Line 04', Sequence 3 = 'Lasting 01',

@@ -5,6 +5,7 @@ import {
   BLOCK_NO_ACTIVE_MSK,
   BLOCK_PREVIOUS_SEQ,
   BLOCK_CURRENT_SEQ,
+  BLOCK_CURRENT_SEQ_NEGATIVE,
   BLOCK_PARALLEL_SEQ,
   BLOCK_DEPARTMENT_UNMAPPED,
 } from '../lib/transactionGuards.js';
@@ -202,12 +203,83 @@ test('Rule 2: blocks BEFORE rules 3/4 when it fails (single net query)', async (
 
 // PREV_OK is defined in the fixtures section above.
 
-test('Rule 3: blocks when the current department already nets +1', async () => {
+test('Rule 3: repairs when the current department nets -1 (Pass brings it back to 0)', async () => {
+  // Prospective logic: current -1 + a Pass (+1) nets 0 - allowed.
+  // (The old static rule blocked any non-zero current net.)
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK, 'ORG-001|Lasting 01': -1 },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+    qcStatus: 'Forward',
+  });
+  assert.equal(result.ok, true);
+});
+
+test('Rule 3: Return on a current net +1 PASSES and reduces net to 0 (prospective fix)', async () => {
+  // THE FIX: current +1 + a Return (-1) nets 0 - allowed. The old static
+  // rule blocked this with "Net count is already +1".
   const db = createFakeDb({
     mskRows: { 'MSK-001': [mskRow()] },
     counts: { ...PREV_OK, 'ORG-001|Lasting 01': 1 },
   });
-  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+    qcStatus: 'Return',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.orgQr, 'ORG-001');
+});
+
+test('Rule 3: Return on a current net 0 blocks (0 error - nothing to clear)', async () => {
+  // Prospective logic: current 0 + a Return (-1) nets -1 - blocked.
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK, 'ORG-001|Lasting 01': 0 },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+    qcStatus: 'Return',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_CURRENT_SEQ_NEGATIVE);
+});
+
+test('Rule 3: Pass on a current net +1 still blocks (+1 error - would net 2)', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK, 'ORG-001|Lasting 01': 1 },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+    qcStatus: 'Forward',
+  });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_CURRENT_SEQ);
+});
+
+test('Rule 3: only Return decrements - Reworked is a +1 scan (blocks on a +1 net)', async () => {
+  // The service writes count = -1 ONLY for QC 'Return'; every other QC
+  // status (incl. Reworked) writes +1, so the guard predicts the same.
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow()] },
+    counts: { ...PREV_OK, 'ORG-001|Lasting 01': 1 },
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+    qcStatus: 'Reworked',
+  });
   assert.equal(result.ok, false);
   assert.equal(result.reason, BLOCK_CURRENT_SEQ);
 });
@@ -216,16 +288,6 @@ test('Rule 3: blocks when the current department nets 2 (or greater)', async () 
   const db = createFakeDb({
     mskRows: { 'MSK-001': [mskRow()] },
     counts: { ...PREV_OK, 'ORG-001|Lasting 01': 2 },
-  });
-  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
-  assert.equal(result.ok, false);
-  assert.equal(result.reason, BLOCK_CURRENT_SEQ);
-});
-
-test('Rule 3: blocks when the current department nets -1 (not exactly 0)', async () => {
-  const db = createFakeDb({
-    mskRows: { 'MSK-001': [mskRow()] },
-    counts: { ...PREV_OK, 'ORG-001|Lasting 01': -1 },
   });
   const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
   assert.equal(result.ok, false);

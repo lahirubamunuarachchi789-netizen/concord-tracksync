@@ -396,10 +396,13 @@ test('Orchestrator: an unreachable data_updates table blocks the duplicate check
 test('Orchestrator: QC Return BYPASSES the Duplicate Inner Box Guard (registered box allowed through)', async () => {
   // The same Inner Box QR is already registered in data_updates, but the
   // QC status is 'Return' - the Return service layer clears the inner_qr
-  // association, so a registered box MUST be allowed through.
+  // association, so a registered box MUST be allowed through. The shoe
+  // holds a current net of +1 in this department (it was scanned IN), so
+  // the prospective net-count rule also allows the Return (1 - 1 = 0).
   const db = createFakeDb({
     mskRows: { 'MSK-1': MSK_ACTIVE },
     existingInner: { [INNER_A]: true }, // box already registered
+    counts: { [`${SHOE_A}|Upper Line 01`]: 1 }, // current net +1
   });
   const result = await validateStandardScan({
     scannedQr: 'MSK-1',

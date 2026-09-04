@@ -326,8 +326,12 @@ export default function QrActivationView() {
       );
       notify(
         'error',
-        'Scan blocked — Exceeds Cut Qty limit!',
-        `Current: ${verdict.currentSum}, Cut Qty: ${verdict.cutQty}. This scan was not saved.`
+        verdict.negative
+          ? 'Scan blocked — Net count already at zero!'
+          : 'Scan blocked — Exceeds Cut Qty limit!',
+        verdict.negative
+          ? 'A Return would drive the count below zero - there is nothing to return for this QR.'
+          : `Current: ${verdict.currentSum}, Cut Qty: ${verdict.cutQty}. This scan was not saved.`
       );
       return;
     }

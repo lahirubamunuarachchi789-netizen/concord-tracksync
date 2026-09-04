@@ -220,7 +220,7 @@ export default function TransactionsView() {
     //      Rule 1b: Dual-Scan Inner Box checks (V1 URL token, V2 PO
     //               match, V3 srl_num size match) when innerQr captured
     //      Rule 2:  preceding sequence net count must be exactly +1
-    //      Rule 3:  current department net count must be 0
+    //      Rule 3:  prospective net count (current + scan +/-1) in [0, 1]
     //      Rule 4:  parallel same-sequence net count must be 0
     //    Any failure blocks the scan completely - amber flash + toast.
     const gate = await validateStandardTransactionScan(
