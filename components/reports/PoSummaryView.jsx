@@ -127,9 +127,9 @@ function MatrixTable({ matrix }) {
 
   return (
     <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-md">
-      <div className="overflow-x-auto">
+      <div className="relative overflow-x-auto overflow-y-auto max-h-[calc(100vh-220px)] border border-slate-700 rounded-lg">
         <table className="min-w-full border-collapse text-xs">
-          <thead>
+          <thead className="sticky top-0 z-20">
             <tr>
               <th
                 scope="col"
