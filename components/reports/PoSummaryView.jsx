@@ -1,17 +1,7 @@
 'use client';
 
-// ============================================================
-// PoSummaryView - PO Summary Report (the "PO Summary" tab).
-//
-// Lets the user search a PO number. On search the view builds a
-// Size Matrix: sizes (35..48, dynamically from pod.cut_qty)
-// across the top, every production department stacked vertically
-// in sequence order. Each department section shows:
-//   IN | OUT | B Grade | C Grade | Lab Testing | Out Total |
-//   Balance to Cut
-// plus a trailing Total column summing every metric across sizes.
-// The top "Cut OUT" row is sourced from pod.cut_qty.
-// ============================================================
+// Concord TrackSync - PoSummaryView - PO Summary Report tab.
+// Search a PO -> size matrix (35-50) with departments stacked in sequence.
 
 import { useState, useCallback } from 'react';
 import { SpinnerIcon } from '@/components/icons';
@@ -19,9 +9,9 @@ import {
   buildPoSummary,
   CUT_ROW_LABEL,
   TOTAL_KEY,
+  STANDARD_SIZES,
 } from '@/lib/reportsService';
 
-/** Metric rows rendered inside every department section, in order. */
 const DEPARTMENT_METRIC_ROWS = [
   { key: 'in', label: 'IN' },
   { key: 'out', label: 'OUT' },
@@ -72,10 +62,9 @@ export default function PoSummaryView() {
         PO Summary Report
       </h3>
       <p className="mt-1 text-sm text-slate-600">
-        Search a PO to generate a size-by-department production matrix.
+        Search a PO to generate a size-by-department production matrix (sizes 35–50).
       </p>
 
-      {/* ---- PO search input ---- */}
       <div className="mt-4 flex max-w-md gap-2">
         <div className="relative flex-1">
           <input
@@ -105,14 +94,12 @@ export default function PoSummaryView() {
         </button>
       </div>
 
-      {/* ---- Error state ---- */}
       {error && (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {error}
         </div>
       )}
 
-      {/* ---- Loading state ---- */}
       {loading && (
         <div className="mt-6 flex items-center gap-2 text-sm text-slate-500">
           <SpinnerIcon className="h-4 w-4 animate-spin" />
@@ -120,102 +107,96 @@ export default function PoSummaryView() {
         </div>
       )}
 
-      {/* ---- Empty: no search yet ---- */}
       {!loading && !matrix && !error && !searchedPo && (
         <div className="mt-6 flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400">
           Enter a PO number and press Search to view the summary.
         </div>
       )}
 
-      {/* ---- Empty: search returned no cut data ---- */}
-      {!loading && matrix && matrix.sizes.length === 0 && (
-        <div className="mt-6 flex h-32 items-center justify-center rounded-lg border border-dashed border-slate-300 bg-slate-50 text-sm text-slate-400">
-          No cut quantity data found for PO {searchedPo}.
-        </div>
-      )}
-
-      {/* ---- Matrix table ---- */}
-      {!loading && matrix && matrix.sizes.length > 0 && (
-        <MatrixTable matrix={matrix} />
-      )}
+      {!loading && matrix && <MatrixTable matrix={matrix} />}
     </section>
   );
 }
 
-/**
- * Render the full matrix table for a built PO summary.
- * Columns: size columns (numerically sorted) + Total.
- * Rows: Cut OUT, then each department section.
- */
+
+/* ----------------------- matrix rendering --------------------------- */
+
 function MatrixTable({ matrix }) {
   const { po, sizes, rows } = matrix;
   const columns = [...sizes, TOTAL_KEY];
 
   return (
-    <div className="mt-6 overflow-x-auto rounded-xl border border-slate-200 bg-white shadow-sm">
-      <table className="min-w-full border-collapse text-xs">
-        <thead>
-          <tr className="bg-slate-50">
-            <th
-              scope="col"
-              className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-50 px-3 py-2 text-left text-xs font-semibold uppercase tracking-wide text-slate-500"
-            >
-              Department / Metric
-            </th>
-            {sizes.map((size) => (
+    <div className="mt-6 rounded-2xl border border-slate-200 bg-white shadow-md">
+      <div className="overflow-x-auto">
+        <table className="min-w-full border-collapse text-xs">
+          <thead>
+            <tr className="bg-gradient-to-r from-slate-700 to-slate-800">
               <th
-                key={size}
                 scope="col"
-                className="border-b border-slate-200 px-3 py-2 text-center text-xs font-semibold uppercase tracking-wide text-slate-500"
+                className="sticky left-0 z-10 bg-slate-800 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-200"
+                style={{ minWidth: '160px' }}
               >
-                {size}
+                Department / Metric
               </th>
-            ))}
-            <th
-              scope="col"
-              className="border-b border-slate-200 bg-slate-100 px-3 py-2 text-center text-xs font-bold uppercase tracking-wide text-slate-700"
-            >
-              Total
-            </th>
-          </tr>
-        </thead>
-        <tbody>
-          {rows.map((row, rowIdx) =>
-            row.type === 'cut' ? (
-              <CutRow key="cut" row={row} columns={columns} />
-            ) : (
-              <DepartmentSection
-                key={row.name}
-                row={row}
-                columns={columns}
-                isFirst={rowIdx === 1}
-              />
-            )
-          )}
-        </tbody>
-      </table>
-      <div className="border-t border-slate-200 bg-slate-50 px-3 py-2 text-xs text-slate-500">
-        PO: <span className="font-semibold text-slate-700">{po}</span>
+              {sizes.map((size) => (
+                <th
+                  key={size}
+                  scope="col"
+                  className="border-l border-slate-600/40 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-200"
+                >
+                  {size}
+                </th>
+              ))}
+              <th
+                scope="col"
+                className="border-l border-slate-600 bg-slate-900 px-3 py-3 text-center text-[11px] font-extrabold uppercase tracking-wider text-white"
+              >
+                Total
+              </th>
+            </tr>
+          </thead>
+          <tbody>
+            {rows.map((row, rowIdx) =>
+              row.type === 'cut' ? (
+                <CutRow key="cut" row={row} columns={columns} />
+              ) : (
+                <DepartmentSection
+                  key={row.name}
+                  row={row}
+                  columns={columns}
+                  isFirst={rowIdx === 1}
+                />
+              )
+            )}
+          </tbody>
+        </table>
+      </div>
+      <div className="border-t border-slate-200 bg-slate-50 px-4 py-2.5 text-xs text-slate-500 rounded-b-2xl">
+        PO:&nbsp;<span className="font-bold text-slate-800">{po}</span>
+        <span className="ml-4 text-slate-400">
+          Sizes {STANDARD_SIZES[0]}–{STANDARD_SIZES[STANDARD_SIZES.length - 1]}
+        </span>
       </div>
     </div>
   );
 }
 
-/** The top "Cut OUT" row — sourced from pod.cut_qty. */
+
+/** Cut OUT row (amber/gold band) sourced from pod.cut_qty. */
 function CutRow({ row, columns }) {
   return (
-    <tr className="bg-amber-50/60">
+    <tr className="bg-gradient-to-r from-amber-50 to-yellow-50">
       <th
         scope="row"
-        className="sticky left-0 z-10 border-b border-r border-slate-200 bg-amber-50/80 px-3 py-2 text-left text-xs font-semibold text-amber-800"
+        className="sticky left-0 z-10 border-b border-r border-amber-200 bg-amber-100/80 px-4 py-2.5 text-left text-xs font-bold uppercase tracking-wide text-amber-900"
       >
         {row.label}
       </th>
       {columns.map((col) => (
         <td
           key={col}
-          className={`border-b border-slate-200 px-3 py-2 text-center font-semibold ${
-            col === TOTAL_KEY ? 'bg-amber-100/60 text-amber-900' : 'text-amber-800'
+          className={`border-b border-amber-100 px-2 py-2.5 text-center font-bold ${
+            col === TOTAL_KEY ? 'bg-amber-200/60 text-amber-900' : 'text-amber-800'
           }`}
         >
           {row.values[col] ?? 0}
@@ -225,39 +206,29 @@ function CutRow({ row, columns }) {
   );
 }
 
-/**
- * One department section: a header row followed by the metric rows
- * (IN, OUT, B Grade, C Grade, Lab Testing, Out Total, Balance to Cut).
- */
+/** One department section: header band + metric rows. */
 function DepartmentSection({ row, columns, isFirst }) {
   return (
     <>
-      <tr className={isFirst ? '' : 'border-t-2 border-slate-300'}>
+      <tr className={isFirst ? '' : 'border-t-2 border-slate-400'}>
         <th
           scope="row"
           colSpan={columns.length + 1}
-          className="sticky left-0 z-10 border-b border-r border-slate-200 bg-slate-100 px-3 py-2 text-left text-xs font-bold uppercase tracking-wide text-slate-700"
+          className="sticky left-0 z-10 border-b border-r border-slate-200 bg-gradient-to-r from-slate-100 to-slate-200 px-4 py-2.5 text-left"
         >
-          {row.name}
-          <span className="ml-2 font-normal normal-case text-slate-400">
+          <span className="text-xs font-extrabold uppercase tracking-wider text-slate-800">
+            {row.name}
+          </span>
+          <span className="ml-2 rounded-full bg-slate-300/60 px-2 py-0.5 text-[10px] font-semibold normal-case text-slate-600">
             seq {row.sequence}
           </span>
         </th>
       </tr>
       {DEPARTMENT_METRIC_ROWS.map((metric) => (
-        <tr
-          key={metric.key}
-          className={
-            metric.key === 'outTotal'
-              ? 'bg-blue-50/40'
-              : metric.key === 'balanceToCut'
-                ? 'bg-emerald-50/40'
-                : ''
-          }
-        >
+        <tr key={metric.key} className={metricRowClass(metric.key)}>
           <th
             scope="row"
-            className="sticky left-0 z-10 border-b border-r border-slate-200 bg-white px-3 py-1.5 text-left text-xs font-medium text-slate-600"
+            className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-4 py-1.5 text-left text-[11px] font-medium text-slate-600"
           >
             {metric.label}
           </th>
@@ -267,15 +238,7 @@ function DepartmentSection({ row, columns, isFirst }) {
             return (
               <td
                 key={col}
-                className={`border-b border-slate-100 px-3 py-1.5 text-center ${
-                  isTotal
-                    ? 'bg-slate-50 font-semibold text-slate-700'
-                    : 'text-slate-700'
-                } ${
-                  metric.key === 'balanceToCut' && value > 0
-                    ? 'text-emerald-700'
-                    : ''
-                } ${metric.key === 'balanceToCut' && value < 0 ? 'text-red-600' : ''}`}
+                className={metricCellClass(metric.key, value, isTotal)}
               >
                 {value}
               </td>
@@ -288,3 +251,37 @@ function DepartmentSection({ row, columns, isFirst }) {
 }
 
 
+/** Background tint for a metric row based on its type. */
+function metricRowClass(key) {
+  switch (key) {
+    case 'outTotal':
+      return 'bg-emerald-50/50';
+    case 'balanceToCut':
+      return 'bg-sky-50/50';
+    case 'bGrade':
+      return 'bg-orange-50/30';
+    case 'cGrade':
+      return 'bg-rose-50/30';
+    case 'labTesting':
+      return 'bg-violet-50/30';
+    default:
+      return '';
+  }
+}
+
+/** Cell class with color accents for QC categories and balance. */
+function metricCellClass(key, value, isTotal) {
+  const base = 'border-b border-slate-100 px-2 py-1.5 text-center';
+  const weight = isTotal ? 'bg-slate-50 font-bold text-slate-800' : 'font-medium text-slate-700';
+
+  if (key === 'balanceToCut') {
+    if (value > 0) return `${base} ${weight} text-emerald-700`;
+    if (value < 0) return `${base} ${weight} text-red-600`;
+    return `${base} ${weight}`;
+  }
+  if (key === 'bGrade') return `${base} ${weight} text-orange-700`;
+  if (key === 'cGrade') return `${base} ${weight} text-rose-700`;
+  if (key === 'labTesting') return `${base} ${weight} text-violet-700`;
+  if (key === 'outTotal') return `${base} ${weight} text-emerald-800`;
+  return `${base} ${weight}`;
+}
