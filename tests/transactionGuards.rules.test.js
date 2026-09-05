@@ -8,7 +8,11 @@ import {
   BLOCK_CURRENT_SEQ_NEGATIVE,
   BLOCK_PARALLEL_SEQ,
   BLOCK_DEPARTMENT_UNMAPPED,
+  cutQtyExceededReason,
+  noCutQtyReason,
+  BLOCK_CUT_QTY_UNREACHABLE,
 } from '../lib/transactionGuards.js';
+import { normalizeSizeValue, parseOrgQr } from '../lib/transactionDualScan.js';
 
 /* ----------------------------- fixtures ----------------------------- */
 
@@ -56,8 +60,18 @@ function createFakeDb({
   departments = DEPARTMENTS,
   counts = {},
   failMsk = false,
+  podRows = [],
+  dataUpdates = [],
+  failPod = false,
+  failDataUpdates = false,
 } = {}) {
-  const calls = { mskLookups: [], departmentFetches: 0, netCountQueries: [] };
+  const calls = {
+    mskLookups: [],
+    departmentFetches: 0,
+    netCountQueries: [],
+    cutQtyQueries: [],
+    deptPoSizeQueries: [],
+  };
   return {
     calls,
     async listMskRowsByMskQr(mskQr) {
@@ -75,6 +89,38 @@ function createFakeDb({
         const values = counts[`${qrCode}|${name}`];
         if (Array.isArray(values)) return sum + values.reduce((a, b) => a + b, 0);
         return sum + (values || 0);
+      }, 0);
+    },
+    async getCutQtyForPoSize(po, size) {
+      calls.cutQtyQueries.push({ po, size });
+      if (failPod) throw new Error('pod fetch failed');
+      const poValue = String(po ?? '').trim();
+      if (!poValue) return null;
+      const wanted = normalizeSizeValue(size);
+      const row = (podRows || []).find(
+        (r) => String(r?.po ?? '').trim() === poValue && r?.cut_qty != null && normalizeSizeValue(r?.size) === wanted
+      );
+      return row ? Number(row.cut_qty) : null;
+    },
+    async getDeptPoSizeSum(department, po, size) {
+      calls.deptPoSizeQueries.push({ department, po, size });
+      if (failDataUpdates) throw new Error('data_updates fetch failed');
+      const dept = String(department ?? '').trim();
+      if (!dept) return 0;
+      const poValue = String(po ?? '').trim();
+      const wantedSize = normalizeSizeValue(size);
+      return (dataUpdates || []).reduce((sum, row) => {
+        if (String(row?.department ?? '').trim() !== dept) return sum;
+        const parsed = parseOrgQr(row?.qr_code);
+        if (
+          parsed.po != null &&
+          String(parsed.po).trim() === poValue &&
+          parsed.size != null &&
+          normalizeSizeValue(parsed.size) === wantedSize
+        ) {
+          return sum + (Number.isFinite(Number(row?.count)) ? Number(row.count) : 0);
+        }
+        return sum;
       }, 0);
     },
   };
@@ -467,5 +513,223 @@ test('Rule 5: passes when there is no next department (final department)', async
     db,
   });
   assert.equal(result.ok, true);
+});
+
+/* ----------- Rule 6: PO + Size Cut Quantity limit guard ------------- */
+
+// org_qr in the ";mqc;po;size;scanned;" activation format — encodes a
+// PO + size so the Cut Quantity guard (Rule 6) applies.
+const ORG_QR = ';mqc;PO-123;35;scanned;';
+
+// PREV_OK for the semicolon-formatted org_qr (Rule 2: previous seq nets +1).
+const PREV_OK_ORG = { [`${ORG_QR}|Upper Line 04`]: 1 };
+
+test('Rule 6: passes when prospective department PO+Size quantity is within cut_qty', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: { ...PREV_OK_ORG, [`${ORG_QR}|Lasting 01`]: 0 }, // Rules 2 + 3 satisfied
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 5 }],
+    // Current PO+Size sum = 3; prospective 3 + 1 = 4 ≤ 5.
+    dataUpdates: [
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 2 },
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+    ],
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, true);
+  assert.equal(result.orgQr, ORG_QR);
+  // Rule 6 queried both the pod limit and the department PO+Size sum.
+  assert.equal(db.calls.cutQtyQueries.length, 1);
+  assert.deepEqual(db.calls.cutQtyQueries[0], { po: 'PO-123', size: '35' });
+  assert.equal(db.calls.deptPoSizeQueries.length, 1);
+  assert.deepEqual(db.calls.deptPoSizeQueries[0], {
+    department: 'Lasting 01',
+    po: 'PO-123',
+    size: '35',
+  });
+});
+
+test('Rule 6: blocks when prospective department PO+Size quantity exceeds cut_qty (exact message)', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: { ...PREV_OK_ORG, [`${ORG_QR}|Lasting 01`]: 0 },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 3 }],
+    // Current PO+Size sum = 3; prospective 3 + 1 = 4 > 3 → blocked.
+    dataUpdates: [
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+    ],
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.reason,
+    cutQtyExceededReason({
+      cutQty: 3,
+      po: 'PO-123',
+      size: '35',
+      department: 'Lasting 01',
+      currentDeptPoSizeSum: 3,
+    })
+  );
+});
+
+test('Rule 6: Return scan (-1) reduces the PO+Size sum and passes when within cut_qty', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: {
+      ...PREV_OK_ORG,
+      [`${ORG_QR}|Lasting 01`]: 1, // Rule 3: current net +1, Return → 0 (allowed)
+    },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 5 }],
+    // Current PO+Size sum = 3; Return → prospective 3 - 1 = 2 ≤ 5.
+    dataUpdates: [
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+      { department: 'Lasting 01', qr_code: ORG_QR, count: 1 },
+    ],
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER,
+    db,
+    qcStatus: 'Return',
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.orgQr, ORG_QR);
+});
+
+test('Rule 6: blocks fail-closed when no pod row exists for the PO + size', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: { ...PREV_OK_ORG, [`${ORG_QR}|Lasting 01`]: 0 },
+    podRows: [], // no pod row for PO-123 / 35
+    dataUpdates: [],
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, noCutQtyReason('PO-123', '35'));
+});
+
+test('Rule 6: blocks fail-closed when pod row has a null cut_qty', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: { ...PREV_OK_ORG, [`${ORG_QR}|Lasting 01`]: 0 },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: null }],
+    dataUpdates: [],
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, noCutQtyReason('PO-123', '35'));
+});
+
+test('Rule 6: blocks fail-safe when the pod table cannot be reached', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: { ...PREV_OK_ORG, [`${ORG_QR}|Lasting 01`]: 0 },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 5 }],
+    failPod: true,
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_CUT_QTY_UNREACHABLE);
+});
+
+test('Rule 6: blocks fail-safe when data_updates cannot be reached for the PO+Size sum', async () => {
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: { ...PREV_OK_ORG, [`${ORG_QR}|Lasting 01`]: 0 },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 5 }],
+    dataUpdates: [{ department: 'Lasting 01', qr_code: ORG_QR, count: 2 }],
+    failDataUpdates: true,
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, false);
+  assert.equal(result.reason, BLOCK_CUT_QTY_UNREACHABLE);
+});
+
+test('Rule 6: skipped for org_qrs that do NOT encode a PO + size (plain legacy QR)', async () => {
+  // 'LEGACY-001' has no semicolon structure -> parseOrgQr returns po = the
+  // whole text, size = null. The guard skips when size is absent.
+  const LEGACY_ORG = 'LEGACY-001';
+  const PREV_OK_LEGACY = { [`${LEGACY_ORG}|Upper Line 04`]: 1 };
+  const db = createFakeDb({
+    mskRows: { 'MSK-001': [mskRow('Active', LEGACY_ORG)] },
+    counts: { ...PREV_OK_LEGACY, [`${LEGACY_ORG}|Lasting 01`]: 0 },
+  });
+  const result = await validateStandardScan({ scannedQr: 'MSK-001', user: USER, db });
+  assert.equal(result.ok, true);
+  // Rule 6 never queried pod or data_updates for the cut quantity.
+  assert.equal(db.calls.cutQtyQueries.length, 0);
+  assert.equal(db.calls.deptPoSizeQueries.length, 0);
+});
+
+test('Rule 6: runs in Packing single-scan lookup mode (pre-resolved org_qr)', async () => {
+  // Packing user scans the Inner Box QR; org_qr is resolved from data_updates
+  // and passed pre-resolved. Rule 1 (msk) and Rule 1b (dual-scan) are
+  // skipped; Rules 2-5 + Rule 6 run on the resolved org_qr.
+  const PACKING_DEPTS = [
+    { id: 1, department: 'Upper Line 01', sequence: 1 },
+    { id: 2, department: 'Packing', sequence: 3 },
+  ];
+  const db = createFakeDb({
+    departments: PACKING_DEPTS,
+    // No mskRows needed - orgQr is pre-resolved, Rule 1 is skipped.
+    counts: {
+      [`${ORG_QR}|Upper Line 01`]: 1, // Rule 2: previous seq nets +1
+      [`${ORG_QR}|Packing`]: 0, // Rule 3: current net 0
+    },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 5 }],
+    dataUpdates: [{ department: 'Packing', qr_code: ORG_QR, count: 2 }], // sum 2, prospective 3 ≤ 5
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'IBOX-001',
+    user: { username: 'p-user', department: 'Packing' },
+    db,
+    orgQr: ORG_QR, // pre-resolved -> Packing single-scan lookup mode
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.orgQr, ORG_QR);
+  // Rule 1 (msk) was skipped - no msk lookup.
+  assert.equal(db.calls.mskLookups.length, 0);
+  // Rule 6 ran against the resolved org_qr.
+  assert.equal(db.calls.cutQtyQueries.length, 1);
+  assert.equal(db.calls.deptPoSizeQueries.length, 1);
+});
+
+test('Rule 6: runs AFTER Rule 5 - blocks cut_qty even when downstream guard would pass', async () => {
+  // Verifies Rule 6 is the final guard: the scan reaches it only after
+  // Rules 1-5 all pass, and a cut_qty violation blocks here.
+  const db = createFakeDb({
+    departments: DEPARTMENTS_WITH_DOWNSTREAM,
+    mskRows: { 'MSK-001': [mskRow('Active', ORG_QR)] },
+    counts: {
+      ...PREV_OK_ORG,
+      [`${ORG_QR}|Lasting 01`]: 0,
+      // downstream nets 0 - Rule 5 passes
+    },
+    podRows: [{ po: 'PO-123', size: '35', cut_qty: 2 }],
+    dataUpdates: [{ department: 'Lasting 01', qr_code: ORG_QR, count: 2 }], // sum 2, prospective 3 > 2
+  });
+  const result = await validateStandardScan({
+    scannedQr: 'MSK-001',
+    user: USER_WITH_DOWNSTREAM,
+    db,
+  });
+  assert.equal(result.ok, false);
+  assert.equal(
+    result.reason,
+    cutQtyExceededReason({
+      cutQty: 2,
+      po: 'PO-123',
+      size: '35',
+      department: 'Lasting 01',
+      currentDeptPoSizeSum: 2,
+    })
+  );
+  // All 4 prior net-count queries (Rules 2,3,4,5) ran before Rule 6.
+  assert.equal(db.calls.netCountQueries.length, 4);
+  assert.equal(db.calls.cutQtyQueries.length, 1);
 });
 

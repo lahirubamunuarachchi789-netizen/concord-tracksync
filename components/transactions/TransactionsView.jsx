@@ -261,6 +261,8 @@ export default function TransactionsView() {
     //      Rule 3:  prospective net count (current + scan +/-1) in [0, 1]
     //      Rule 4:  parallel same-sequence net count must be 0
     //      Rule 5:  downstream department sequence guard
+    //      Rule 6:  PO+Size Cut Quantity limit (pod.cut_qty) for the
+    //               current department
     //    Any failure blocks the scan completely - amber flash + toast.
     //    `code` is the scannedQr (Shoe QR), `innerQr` is the captured Inner Box QR.
     //    In Packing mode, `code` is the already-resolved org_qr from data_updates.

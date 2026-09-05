@@ -287,6 +287,15 @@ function createFakeDb({
       calls.innerLookups.push(innerQr);
       return Boolean(existingInner[innerQr]);
     },
+    // Rule 6 (Cut Quantity) adapter stubs: these tests exercise the
+    // dual-scan V1-V3 + Duplicate Inner Box guards, NOT the cut_qty limit,
+    // so return a generous limit and a zero sum to keep Rule 6 passing.
+    async getCutQtyForPoSize() {
+      return Number.MAX_SAFE_INTEGER;
+    },
+    async getDeptPoSizeSum() {
+      return 0;
+    },
   };
 }
 

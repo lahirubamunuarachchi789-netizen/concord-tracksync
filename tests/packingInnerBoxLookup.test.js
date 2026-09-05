@@ -146,6 +146,15 @@ function createFakeGuardDb({
       calls.innerExistsChecks.push(innerQr);
       return innerExists;
     },
+    // Rule 6 (Cut Quantity) adapter stubs: these tests exercise the
+    // sequence / net-count / dual-scan guards, NOT the cut_qty limit, so
+    // return a generous limit and a zero sum to keep Rule 6 passing.
+    async getCutQtyForPoSize() {
+      return Number.MAX_SAFE_INTEGER;
+    },
+    async getDeptPoSizeSum() {
+      return 0;
+    },
   };
 }
 
