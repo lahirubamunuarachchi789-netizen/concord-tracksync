@@ -130,10 +130,10 @@ function MatrixTable({ matrix }) {
       <div className="overflow-x-auto">
         <table className="min-w-full border-collapse text-xs">
           <thead>
-            <tr className="bg-gradient-to-r from-slate-700 to-slate-800">
+            <tr>
               <th
                 scope="col"
-                className="sticky left-0 z-10 bg-slate-800 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-200"
+                className="sticky left-0 top-0 z-30 border-b border-slate-600 bg-slate-800 px-4 py-3 text-left text-[11px] font-bold uppercase tracking-wider text-slate-200"
                 style={{ minWidth: '160px' }}
               >
                 Department / Metric
@@ -142,14 +142,14 @@ function MatrixTable({ matrix }) {
                 <th
                   key={size}
                   scope="col"
-                  className="border-l border-slate-600/40 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-200"
+                  className="sticky top-0 z-20 border-l border-b border-slate-600/40 bg-slate-800 px-2 py-3 text-center text-[11px] font-bold uppercase tracking-wider text-slate-200"
                 >
                   {size}
                 </th>
               ))}
               <th
                 scope="col"
-                className="border-l border-slate-600 bg-slate-900 px-3 py-3 text-center text-[11px] font-extrabold uppercase tracking-wider text-white"
+                className="sticky top-0 z-20 border-l border-b border-slate-600 bg-slate-900 px-3 py-3 text-center text-[11px] font-extrabold uppercase tracking-wider text-white"
               >
                 Total
               </th>
@@ -228,7 +228,7 @@ function DepartmentSection({ row, columns, isFirst }) {
         <tr key={metric.key} className={metricRowClass(metric.key)}>
           <th
             scope="row"
-            className="sticky left-0 z-10 border-b border-r border-slate-100 bg-white px-4 py-1.5 text-left text-[11px] font-medium text-slate-600"
+            className={metricLabelClass(metric.key)}
           >
             {metric.label}
           </th>
@@ -257,7 +257,7 @@ function metricRowClass(key) {
     case 'outTotal':
       return 'bg-emerald-50/50';
     case 'balanceToCut':
-      return 'bg-sky-50/50';
+      return 'bg-amber-50';
     case 'bGrade':
       return 'bg-orange-50/30';
     case 'cGrade':
@@ -269,16 +269,29 @@ function metricRowClass(key) {
   }
 }
 
-/** Cell class with color accents for QC categories and balance. */
+/** Sticky metric-label cell class; Balance to Cut gets the amber accent. */
+function metricLabelClass(key) {
+  const base =
+    'sticky left-0 z-10 border-b border-r border-slate-100 px-4 py-1.5 text-left text-[11px] font-medium';
+  if (key === 'balanceToCut') {
+    return `${base} bg-amber-100/80 font-bold text-amber-900`;
+  }
+  return `${base} bg-white text-slate-600`;
+}
+
+/** Data cell class with color accents for QC categories and balance. */
 function metricCellClass(key, value, isTotal) {
   const base = 'border-b border-slate-100 px-2 py-1.5 text-center';
-  const weight = isTotal ? 'bg-slate-50 font-bold text-slate-800' : 'font-medium text-slate-700';
 
+  // Balance to Cut: prominent cream/amber highlight across data cells.
   if (key === 'balanceToCut') {
-    if (value > 0) return `${base} ${weight} text-emerald-700`;
-    if (value < 0) return `${base} ${weight} text-red-600`;
-    return `${base} ${weight}`;
+    const tint = isTotal ? 'bg-amber-200/70 font-bold' : 'bg-amber-50 font-semibold';
+    if (value > 0) return `${base} ${tint} text-emerald-700`;
+    if (value < 0) return `${base} ${tint} text-red-600`;
+    return `${base} ${tint} text-amber-900`;
   }
+
+  const weight = isTotal ? 'bg-slate-50 font-bold text-slate-800' : 'font-medium text-slate-700';
   if (key === 'bGrade') return `${base} ${weight} text-orange-700`;
   if (key === 'cGrade') return `${base} ${weight} text-rose-700`;
   if (key === 'labTesting') return `${base} ${weight} text-violet-700`;
