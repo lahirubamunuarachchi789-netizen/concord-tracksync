@@ -4,9 +4,12 @@
 // Search a PO -> size matrix (35-50) with departments stacked in sequence.
 
 import { useState, useCallback } from 'react';
-import { SpinnerIcon } from '@/components/icons';
+import { SpinnerIcon, DownloadIcon } from '@/components/icons';
 import {
   buildPoSummary,
+  fetchPoRawQrData,
+  buildQrDataCsv,
+  buildQrDataFileName,
   CUT_ROW_LABEL,
   TOTAL_KEY,
   STANDARD_SIZES,
@@ -28,6 +31,8 @@ export default function PoSummaryView() {
   const [matrix, setMatrix] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
+  const [exporting, setExporting] = useState(false);
+  const [exportError, setExportError] = useState(null);
 
   const runSearch = useCallback(async () => {
     const po = poInput.trim();
@@ -56,6 +61,23 @@ export default function PoSummaryView() {
     [runSearch]
   );
 
+  const handleExport = useCallback(async () => {
+    const po = searchedPo || poInput.trim();
+    if (!po) return;
+    setExporting(true);
+    setExportError(null);
+    try {
+      const rows = await fetchPoRawQrData(po);
+      const csv = buildQrDataCsv(rows, po);
+      const fileName = buildQrDataFileName(po);
+      downloadCsv(fileName, csv);
+    } catch (err) {
+      setExportError(err?.message || 'Failed to export QR data.');
+    } finally {
+      setExporting(false);
+    }
+  }, [searchedPo, poInput]);
+
   return (
     <section aria-labelledby="po-summary-heading">
       <h3 id="po-summary-heading" className="text-lg font-semibold text-slate-900">
@@ -65,8 +87,8 @@ export default function PoSummaryView() {
         Search a PO to generate a size-by-department production matrix (sizes 35–50).
       </p>
 
-      <div className="mt-4 flex max-w-md gap-2">
-        <div className="relative flex-1">
+      <div className="mt-4 flex max-w-4xl flex-wrap items-center gap-2">
+        <div className="relative min-w-[220px] flex-1">
           <input
             type="text"
             value={poInput}
@@ -92,7 +114,32 @@ export default function PoSummaryView() {
             'Search'
           )}
         </button>
+        <button
+          type="button"
+          onClick={handleExport}
+          disabled={exporting || !matrix}
+          title={matrix ? `Export QR data for PO ${searchedPo}` : 'Search a PO first to enable export'}
+          className="inline-flex items-center gap-2 rounded-lg border border-emerald-600 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exporting ? (
+            <>
+              <SpinnerIcon className="h-4 w-4 animate-spin" />
+              Exporting
+            </>
+          ) : (
+            <>
+              <DownloadIcon className="h-4 w-4" />
+              Export QR Data
+            </>
+          )}
+        </button>
       </div>
+
+      {exportError && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {exportError}
+        </div>
+      )}
 
       {error && (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
@@ -120,6 +167,18 @@ export default function PoSummaryView() {
 
 
 /* ----------------------- matrix rendering --------------------------- */
+/** Trigger a browser download for the generated CSV file. */
+function downloadCsv(fileName, csv) {
+  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
 
 function MatrixTable({ matrix }) {
   const { po, sizes, rows } = matrix;

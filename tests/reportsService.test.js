@@ -6,6 +6,15 @@ import {
   sumMetricsAcrossSizes,
   buildPoSummary,
   STANDARD_SIZES,
+  SLST_TIME_ZONE,
+  QR_DATA_CSV_HEADERS,
+  formatSlstTimestamp,
+  formatSlstDate,
+  escapeCsvCell,
+  transformQrRowForExport,
+  buildQrDataCsv,
+  buildQrDataFileName,
+  createPoQrDataFetcher,
 } from '../lib/reportsService.js';
 
 test('emptyMetrics returns a zeroed metrics bucket', () => {
@@ -323,4 +332,202 @@ test('departments appear in the order given during assembly', () => {
 
   assert.equal(rows[1].name, 'Lasting 01');
   assert.equal(rows[2].name, 'Upper Line 01');
+});
+
+/* ==================================================================
+ * QR DATA EXPORT — Sri Lanka Local Time (Asia/Colombo, UTC+5:30)
+ * ================================================================== */
+
+test('SLST_TIME_ZONE is Asia/Colombo', () => {
+  assert.equal(SLST_TIME_ZONE, 'Asia/Colombo');
+});
+
+test('formatSlstTimestamp converts UTC ISO to Asia/Colombo local time', () => {
+  // 2026-09-04 03:58:17 UTC + 5:30 = 2026-09-04 09:28:17 SLST
+  assert.equal(formatSlstTimestamp('2026-09-04T03:58:17.631Z'), '2026-09-04 09:28:17');
+});
+
+test('formatSlstTimestamp accepts the postgres/db format with +00 offset', () => {
+  // Supabase returns strings like '2026-09-04 03:58:17.631+00'.
+  assert.equal(
+    formatSlstTimestamp('2026-09-04 03:58:17.631+00'),
+    '2026-09-04 09:28:17'
+  );
+});
+
+test('formatSlstTimestamp returns empty string for null/blank/invalid values', () => {
+  assert.equal(formatSlstTimestamp(null), '');
+  assert.equal(formatSlstTimestamp(undefined), '');
+  assert.equal(formatSlstTimestamp(''), '');
+  assert.equal(formatSlstTimestamp('not-a-date'), '');
+});
+
+test('formatSlstTimestamp normalizes midnight hour 24 to 00', () => {
+  // 2026-09-03 18:30:00 UTC + 5:30 = 2026-09-04 00:00:00 SLST
+  assert.equal(formatSlstTimestamp('2026-09-03T18:30:00.000Z'), '2026-09-04 00:00:00');
+});
+
+test('formatSlstDate returns YYYY-MM-DD in SLST', () => {
+  // 2026-09-04 03:58:17 UTC stays 2026-09-04 in SLST
+  assert.equal(formatSlstDate('2026-09-04T03:58:17.631Z'), '2026-09-04');
+  // Late-night UTC rolls forward to the next SLST day
+  assert.equal(formatSlstDate('2026-09-03T20:00:00.000Z'), '2026-09-04');
+  assert.equal(formatSlstDate(null), '');
+});
+
+/* ==================================================================
+ * QR DATA EXPORT — CSV escaping and transformation
+ * ================================================================== */
+
+test('escapeCsvCell leaves plain values untouched', () => {
+  assert.equal(escapeCsvCell('Forward'), 'Forward');
+  assert.equal(escapeCsvCell(1), '1');
+  assert.equal(escapeCsvCell(''), '');
+  assert.equal(escapeCsvCell(null), '');
+  assert.equal(escapeCsvCell(undefined), '');
+});
+
+test('escapeCsvCell wraps commas, quotes and line breaks', () => {
+  assert.equal(escapeCsvCell('a,b'), '"a,b"');
+  assert.equal(escapeCsvCell('a"b'), '"a""b"');
+  assert.equal(escapeCsvCell('line1\nline2'), '"line1\nline2"');
+  assert.equal(escapeCsvCell('a,b"c'), '"a,b""c"');
+});
+
+test('QR_DATA_CSV_HEADERS matches the exact Excel column order', () => {
+  assert.deepEqual(QR_DATA_CSV_HEADERS, [
+    'Date & Time (SLST)',
+    'PO',
+    'Size',
+    'Shoe QR',
+    'Inner QR',
+    'Department',
+    'Record Status',
+    'QC Status',
+    'Count',
+    'Created At',
+  ]);
+});
+
+test('transformQrRowForExport parses size from qr_code and converts timestamps', () => {
+  const row = {
+    qr_code: ';mqc1;PO-123;38;scan;',
+    inner_qr: 'INNER-BOX-1',
+    department: 'Lasting 01',
+    record_status: 'OUT',
+    qc_status: 'Forward',
+    count: 1,
+    created_at: '2026-09-04T03:58:17.631Z',
+  };
+  assert.deepEqual(transformQrRowForExport(row, 'PO-123'), [
+    '2026-09-04 09:28:17', // Date & Time (SLST)
+    'PO-123', // PO
+    '38', // Size parsed from qr_code
+    ';mqc1;PO-123;38;scan;', // Shoe QR
+    'INNER-BOX-1', // Inner QR
+    'Lasting 01', // Department
+    'OUT', // Record Status
+    'Forward', // QC Status
+    1, // Count (raw number; stringified during CSV building)
+    '2026-09-04T03:58:17.631Z', // Created At
+  ]);
+});
+
+test('buildQrDataCsv writes headers plus escaped CRLF rows', () => {
+  const rows = [
+    {
+      qr_code: ';mqc1;PO-123;35;scan;',
+      inner_qr: 'INNER,BOX',
+      department: 'Cutting',
+      record_status: 'OUT',
+      qc_status: 'B Grade',
+      count: 1,
+      created_at: '2026-09-04T03:58:17.631Z',
+    },
+  ];
+  const csv = buildQrDataCsv(rows, 'PO-123');
+  // CRLF separated rows
+  const lines = csv.split('\r\n');
+  assert.equal(lines.length, 2);
+  assert.equal(lines[0], QR_DATA_CSV_HEADERS.join(','));
+  // Full data row with SLST timestamp, parsed size, and quoted comma field
+  assert.equal(
+    lines[1],
+    '2026-09-04 09:28:17,PO-123,35,;mqc1;PO-123;35;scan;,"INNER,BOX",Cutting,OUT,B Grade,1,2026-09-04T03:58:17.631Z'
+  );
+});
+
+test('buildQrDataCsv with no rows returns just the header row', () => {
+  assert.equal(buildQrDataCsv([], 'PO-123'), QR_DATA_CSV_HEADERS.join(','));
+});
+
+test('buildQrDataFileName produces PO_{po}_QR_Data_{YYYY-MM-DD}.csv', () => {
+  const name = buildQrDataFileName('144065');
+  assert.match(name, /^PO_144065_QR_Data_\d{4}-\d{2}-\d{2}\.csv$/);
+});
+/* ==================================================================
+ * fetchPoRawQrData — mock supabase client query shape
+ * ================================================================== */
+
+/** Mock supabase-js client capturing the ilike/order query chain. */
+function createMockSupabase(tables = {}) {
+  const queries = [];
+  const makeBuilder = (tableName) => {
+    const record = { table: tableName, select: null, filters: [], orders: [], limit: null };
+    queries.push(record);
+    const chain = {
+      select(columns) { record.select = columns; return chain; },
+      ilike(column, value) { record.filters.push(['ilike', column, value]); return chain; },
+      eq(column, value) { record.filters.push(['eq', column, value]); return chain; },
+      order(column, opts) { record.orders.push([column, opts]); return chain; },
+      limit(n) { record.limit = n; return chain; },
+      then(onFulfilled, onRejected) {
+        const payload = tables[tableName] ?? { data: [], error: null };
+        return Promise.resolve(payload).then(onFulfilled, onRejected);
+      },
+    };
+    return chain;
+  };
+  return { client: { from: makeBuilder }, queries };
+}
+
+test('fetchPoRawQrData queries data_updates ilike by PO segment, oldest-first', async () => {
+  const { client, queries } = createMockSupabase({
+    data_updates: {
+      data: [
+        { qr_code: ';mqc1;PO-123;35;scan;', department: 'Cutting', created_at: '2026-09-04 03:58:17.631+00' },
+        { qr_code: ';mqc1;PO-999;35;scan;', department: 'Cutting', created_at: '2026-09-05 03:58:17.631+00' },
+      ],
+      error: null,
+    },
+  });
+  const fetchPoRawQrData = createPoQrDataFetcher(client);
+  const rows = await fetchPoRawQrData('PO-123');
+  assert.equal(queries.length, 1);
+  assert.equal(queries[0].table, 'data_updates');
+  assert.equal(queries[0].select, 'qr_code, inner_qr, record_status, qc_status, department, count, created_by, created_at');
+  assert.deepEqual(queries[0].filters, [['ilike', 'qr_code', '%;PO-123;%']]);
+  assert.deepEqual(queries[0].orders, [['created_at', { ascending: true }]]);
+  // Only rows whose encoded PO matches survive the re-verification
+  assert.equal(rows.length, 1);
+  assert.equal(rows[0].qr_code, ';mqc1;PO-123;35;scan;');
+});
+
+test('fetchPoRawQrData escapes LIKE wildcards in the PO value', async () => {
+  const { client, queries } = createMockSupabase({ data_updates: { data: [], error: null } });
+  const fetchPoRawQrData = createPoQrDataFetcher(client);
+  await fetchPoRawQrData('PO_1%0');
+  assert.deepEqual(queries[0].filters, [['ilike', 'qr_code', '%;PO\\_1\\%0;%']]);
+});
+
+test('fetchPoRawQrData returns [] for blank PO and for unreachable table', async () => {
+  const blank = createPoQrDataFetcher(createMockSupabase().client);
+  assert.deepEqual(await blank('   '), []);
+
+  const failing = createPoQrDataFetcher(
+    createMockSupabase({
+      data_updates: { data: null, error: new Error('network error') },
+    }).client
+  );
+  assert.deepEqual(await failing('PO-123'), []);
 });
