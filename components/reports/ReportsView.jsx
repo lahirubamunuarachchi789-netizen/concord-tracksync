@@ -2,6 +2,7 @@
 
 import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
+import PoSummaryView from '@/components/reports/PoSummaryView';
 
 const TABS = [
   { id: 'po-summary', label: 'PO Summary' },
@@ -42,7 +43,7 @@ export default function ReportsView() {
       </div>
 
       {/* Tab Content */}
-      <div className="mt-6">{activeTab === 'po-summary' && <PoSummaryPlaceholder />}</div>
+      <div className="mt-6">{activeTab === 'po-summary' && <PoSummaryView />}</div>
       <div className="mt-6">{activeTab === 'daily-output' && <DailyOutputPlaceholder />}</div>
       <div className="mt-6">{activeTab === 'department-output' && <DepartmentOutputPlaceholder />}</div>
     </div>
