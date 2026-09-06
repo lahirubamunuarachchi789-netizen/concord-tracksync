@@ -10,7 +10,8 @@
 import { useCallback, useEffect, useState } from 'react';
 import { ChevronDownIcon, DownloadIcon, FileTextIcon, SpinnerIcon } from '@/components/icons';
 import {
-  buildDailyOutputXlsx,
+  buildDailyOutputRawXlsx,
+  fetchDailyOutputRawRows,
   fetchDailyOutputReport,
   fetchDepartments,
   formatSlstDate,
@@ -101,11 +102,19 @@ export default function DailyOutputView() {
   }, [departmentId, date, recordStatus, qcStatus]);
 
   const handleExport = useCallback(async () => {
-    if (!matrix) return;
+    if (!date) return;
     setExporting(true);
     setExportError(null);
     try {
-      const { buffer, fileName } = await buildDailyOutputXlsx(matrix, {
+      // Export pulls the exact raw scan records behind the matrix (not the
+      // aggregation), with created_at converted to SLST in the sheet.
+      const rawRows = await fetchDailyOutputRawRows({
+        departmentId,
+        date,
+        recordStatus,
+        qcStatus,
+      });
+      const { buffer, fileName } = await buildDailyOutputRawXlsx(rawRows, {
         departmentId,
         date,
         recordStatus,
@@ -117,7 +126,7 @@ export default function DailyOutputView() {
     } finally {
       setExporting(false);
     }
-  }, [matrix, departmentId, date, recordStatus, qcStatus]);
+  }, [departmentId, date, recordStatus, qcStatus]);
 
   const handlePdfExport = useCallback(async () => {
     if (!matrix || !date) return;
@@ -262,7 +271,7 @@ export default function DailyOutputView() {
         <button
           type="button"
           onClick={handleExport}
-          disabled={exporting || !matrix}
+          disabled={exporting || !date}
           className="inline-flex items-center gap-2 rounded-lg border border-emerald-600 bg-emerald-50 px-4 py-2 text-sm font-medium text-emerald-700 shadow-sm transition-colors hover:bg-emerald-100 disabled:cursor-not-allowed disabled:opacity-50"
         >
           {exporting ? (

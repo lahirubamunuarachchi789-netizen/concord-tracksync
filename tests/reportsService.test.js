@@ -46,8 +46,10 @@ import {
     // Daily Output Report.
   aggregateDailyOutput,
   buildDailyOutputXlsx,
+  buildDailyOutputRawXlsx,
   createDailyOutputFetcher,
   DAILY_OUTPUT_COLUMNS,
+  DAILY_OUTPUT_RAW_COLUMNS,
   DAILY_OUTPUT_DEPARTMENT_COLUMN,
   QC_DEFECT_CATEGORIES,
   slstDayUtcBounds,
@@ -884,6 +886,88 @@ test('buildDailyOutputXlsx produces a valid .xlsx buffer with the matrix layout'
   assert.ok(sheet.includes('50'));
   assert.ok(sheet.includes('PO-A'));
   assert.ok(sheet.includes('TOTAL'));
+});
+
+test('createDailyOutputFetcher supports the raw column set for the raw Excel export', async () => {
+  const { client, queries } = createDailyOutputMockSupabase({
+    data_updates: { data: [], error: null },
+  });
+  const fetcher = createDailyOutputFetcher(client);
+  await fetcher({
+    date: '2026-09-04',
+    departmentId: 'Lasting 01',
+    recordStatus: 'OUT',
+    qcStatus: 'B Grade',
+    cumulative: false,
+    columns: DAILY_OUTPUT_RAW_COLUMNS,
+  });
+
+  // Every raw column (id, created_by, inner_qr included) is selected.
+  assert.equal(queries[0].select, DAILY_OUTPUT_RAW_COLUMNS);
+  for (const col of ['id', 'qr_code', 'record_status', 'qc_status', 'created_at', 'department', 'count', 'created_by', 'inner_qr']) {
+    assert.ok(queries[0].select.includes(col), `raw select missing: ${col}`);
+  }
+
+  // Daily SLST window + department / record_status / qc_status filters.
+  const filters = queries[0].filters;
+  assert.ok(filters.some((f) => f[0] === 'gte' && f[1] === 'created_at' && f[2] === '2026-09-03T18:30:00.000Z'));
+  assert.ok(filters.some((f) => f[0] === 'lt' && f[1] === 'created_at' && f[2] === '2026-09-04T18:30:00.000Z'));
+  assert.ok(filters.some((f) => f[0] === 'eq' && f[1] === 'department' && f[2] === 'Lasting 01'));
+  assert.ok(filters.some((f) => f[0] === 'eq' && f[1] === 'record_status' && f[2] === 'OUT'));
+  assert.ok(filters.some((f) => f[0] === 'eq' && f[1] === 'qc_status' && f[2] === 'B Grade'));
+  assert.deepEqual(queries[0].orders, [['created_at', { ascending: true }]]);
+});
+
+test('buildDailyOutputRawXlsx writes raw records with SLST timestamps', async () => {
+  const rawRows = [
+    {
+      id: 101,
+      qr_code: ';mqc1;PO-A;35;scan;',
+      record_status: 'IN',
+      qc_status: 'Forward',
+      created_at: '2026-09-04 03:58:17.631+00', // -> 2026-09-04 09:28:17 SLST
+      department: 'Lasting 01',
+      count: 1,
+      created_by: 'scanner01',
+      inner_qr: 'INNER-001',
+    },
+    {
+      id: 102,
+      qr_code: ';mqc1;PO-A;36;scan;',
+      record_status: 'OUT',
+      qc_status: 'Forward',
+      created_at: '2026-09-03 18:30:00.000+00', // SLST midnight -> 2026-09-04 00:00:00
+      department: 'Lasting 01',
+      count: -1,
+      created_by: null,
+      inner_qr: null,
+    },
+  ];
+
+  const { buffer, fileName } = await buildDailyOutputRawXlsx(rawRows, {
+    departmentId: 'Lasting 01',
+    date: '2026-09-04',
+    recordStatus: 'ALL',
+    qcStatus: 'ALL',
+  });
+
+  assert.equal(fileName, 'Daily_Output_Raw_Data_2026-09-04.xlsx');
+  assert.ok(Buffer.isBuffer(buffer), 'XLSX buffer should be a Buffer');
+  assert.equal(buffer[0], 0x50); // 'P'
+  assert.equal(buffer[1], 0x4b); // 'K'
+
+  const sheet = extractZipEntry(buffer, 'xl/worksheets/sheet1.xml');
+  assert.ok(sheet, 'expected xl/worksheets/sheet1.xml');
+  assert.ok(sheet.includes('RAW DATA'));
+  // All nine raw columns are present as headers.
+  for (const header of ['ID', 'QR Code', 'Record Status', 'QC Status', 'Created At (SLST)', 'Department', 'Count', 'Created By', 'Inner QR']) {
+    assert.ok(sheet.includes(header), `missing header: ${header}`);
+  }
+  // created_at values are converted from UTC to SLST before being written.
+  assert.ok(sheet.includes('2026-09-04 09:28:17'));
+  assert.ok(sheet.includes('2026-09-04 00:00:00'));
+  assert.ok(sheet.includes('INNER-001'));
+  assert.ok(sheet.includes('scanner01'));
 });
 
 test('buildDailyOutputPdf produces a valid PDF buffer with the matrix layout', async () => {
