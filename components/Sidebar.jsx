@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import {
   DashboardIcon,
+  FileTextIcon,
   HomeIcon,
   LogoMark,
   ReportsIcon,
@@ -17,6 +18,7 @@ const NAV_ITEMS = [
   { label: 'Transactions', href: '/transactions', Icon: TransactionsIcon },
   { label: 'Reports', href: '/reports', Icon: ReportsIcon },
   { label: 'Stock', href: '/stock', Icon: StockIcon },
+  { label: 'Data Admin', href: '/data-admin', Icon: FileTextIcon },
 ];
 
 /**

@@ -110,3 +110,71 @@ test('aggregateWeeklyOutput buckets scans into Mon-Sun by SLST date', () => {
   assert.equal(weekly[2].qty, 15);
   assert.equal(weekly.reduce((s, w) => s + w.qty, 0), 27);
 });
+
+// ---------------- Data Admin service (lib/dashAdminService.js) ----------------
+
+const {
+  validateDashForm,
+  normalizeDashRow,
+} = await import('../lib/dashAdminService.js');
+
+test('validateDashForm accepts a valid dash record', () => {
+  const result = validateDashForm({
+    date: '2026-09-09',
+    department: 'Desma',
+    planed_qty: '1200',
+    eficiancy: '85.5',
+    available_man_power: '45',
+  });
+  assert.equal(result.ok, true);
+  assert.deepEqual(result.values, {
+    date: '2026-09-09',
+    department: 'Desma',
+    planed_qty: 1200,
+    eficiancy: 85.5,
+    available_man_power: 45,
+  });
+});
+
+test('validateDashForm rejects invalid fields', () => {
+  assert.equal(validateDashForm({ date: 'bad', department: '', planed_qty: -1, eficiancy: 200, available_man_power: 2.5 }).ok, false);
+  const result = validateDashForm({
+    date: 'nope',
+    department: '  ',
+    planed_qty: 'x',
+    eficiancy: 150,
+    available_man_power: 'a',
+  });
+  assert.equal(result.ok, false);
+  for (const key of ['date', 'department', 'planed_qty', 'eficiancy', 'available_man_power']) {
+    assert.ok(result.errors[key], key);
+  }
+});
+
+test('validateDashForm treats empty efficiency as 0', () => {
+  const result = validateDashForm({
+    date: '2026-09-09',
+    department: 'Lasting 01',
+    planed_qty: 10,
+    eficiancy: '',
+    available_man_power: 3,
+  });
+  assert.equal(result.ok, true);
+  assert.equal(result.values.eficiancy, 0);
+});
+
+test('normalizeDashRow coerces dash row types', () => {
+  const row = normalizeDashRow({
+    id: 7,
+    date: '2026-09-09',
+    department: 'Desma',
+    planed_qty: '500',
+    eficiancy: '62.5',
+    available_man_power: '12',
+  });
+  assert.equal(row.id, 7);
+  assert.equal(row.planed_qty, 500);
+  assert.equal(row.eficiancy, 62.5);
+  assert.equal(row.available_man_power, 12);
+  assert.deepEqual(normalizeDashRow(null).department, '');
+});
