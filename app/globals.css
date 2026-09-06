@@ -1,4 +1,4 @@
-@tailwind base;
+﻿@tailwind base;
 @tailwind components;
 @tailwind utilities;
 
@@ -63,176 +63,246 @@ body.tv-mode .app-shell-main {
   padding: 0 !important;
 }
 
-/* ------------------------------------------------------------
-   Live Dashboard - advanced red sports car race animation
-   Spinning wheels, vibrating chassis, glowing exhaust trail,
-   tire-skid dust, racing lane and waving finish flag.
-   ------------------------------------------------------------ */
-/* Continuous wheel rotation */
-@keyframes wheel-spin {
-  from {
-    transform: rotate(0deg);
-  }
-  to {
-    transform: rotate(360deg);
-  }
-}
+/* ============================================================
+   Live Dashboard - Retro Cricket Scoreboard theme
+   Dark textured panel, split-flap digits, live rolling counts.
+   ============================================================ */
 
-.dashboard-wheel {
-  animation: wheel-spin 0.35s linear infinite;
-  transform-box: view-box;
-}
-
-/* Subtle chassis vibration for a running engine */
-@keyframes car-vibrate {
-  0%,
-  100% {
-    transform: translateY(0);
-  }
-  25% {
-    transform: translateY(-1.5px);
-  }
-  75% {
-    transform: translateY(1px);
-  }
-}
-
-.dashboard-car {
-  animation: car-vibrate 0.18s linear infinite;
-  will-change: transform;
-}
-
-/* Glowing exhaust flame pulse */
-@keyframes exhaust-pulse {
-  0%,
-  100% {
-    opacity: 0.5;
-    transform: scale(0.85) translateX(0);
-  }
-  50% {
-    opacity: 1;
-    transform: scale(1.15) translateX(-3px);
-  }
-}
-
-.dashboard-exhaust {
-  animation: exhaust-pulse 0.4s ease-in-out infinite;
-  transform-origin: 6px 46px;
-  transform-box: view-box;
-}
-
-/* Headlight beam flicker */
-@keyframes headlight-flicker {
-  0%,
-  100% {
-    opacity: 0.35;
-  }
-  50% {
-    opacity: 0.7;
-  }
-}
-
-.dashboard-headlight {
-  animation: headlight-flicker 1.2s ease-in-out infinite;
-}
-
-/* Glowing progress badge pinned above the rider */
-@keyframes badge-glow {
-  0%,
-  100% {
-    box-shadow:
-      0 0 10px rgba(99, 102, 241, 0.65),
-      0 0 22px rgba(14, 165, 233, 0.35);
-  }
-  50% {
-    box-shadow:
-      0 0 18px rgba(99, 102, 241, 0.9),
-      0 0 34px rgba(14, 165, 233, 0.55);
-  }
-}
-
-.dashboard-progress-badge {
-  background: linear-gradient(90deg, #4f46e5, #0ea5e9);
-  animation: badge-glow 1.6s ease-in-out infinite;
-}
-
-/* Racing lane surface (turf gradient + subtle sheen) */
-.dashboard-race {
-  background: linear-gradient(180deg, #f0fdf4 0%, #ecfdf5 55%, #f8fafc 100%);
-}
-
-.dashboard-lane {
+/* Vintage dark board: leather/wood texture + vignette */
+.dashboard-scoreboard {
   background:
+    radial-gradient(ellipse at top, rgba(255, 255, 255, 0.06), transparent 60%),
     repeating-linear-gradient(
-      90deg,
-      rgba(255, 255, 255, 0.35) 0px,
-      rgba(255, 255, 255, 0.35) 40px,
-      transparent 40px,
-      transparent 80px
+      45deg,
+      rgba(255, 255, 255, 0.015) 0px,
+      rgba(255, 255, 255, 0.015) 2px,
+      transparent 2px,
+      transparent 6px
     ),
-    linear-gradient(180deg, #86efac 0%, #4ade80 100%);
-  box-shadow: inset 0 3px 6px rgba(0, 0, 0, 0.08);
+    linear-gradient(160deg, #1e293b 0%, #0f172a 55%, #020617 100%);
+  box-shadow:
+    inset 0 0 60px rgba(0, 0, 0, 0.6),
+    inset 0 2px 0 rgba(255, 255, 255, 0.06);
 }
 
-@keyframes track-dash-move {
+/* Marquee header strip */
+.sb-marquee {
+  border-bottom: 2px solid rgba(251, 191, 36, 0.35);
+  padding-bottom: 0.75rem;
+}
+
+/* Individual score panels */
+.sb-panel {
+  border-radius: 0.75rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.65);
+  box-shadow: inset 0 1px 8px rgba(0, 0, 0, 0.8);
+  padding: 1rem 1.25rem;
+}
+
+.sb-label {
+  font-size: 10px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.25em;
+  color: #94a3b8;
+  margin-bottom: 0.5rem;
+}
+
+.sb-shift-name {
+  display: flex;
+  flex-direction: column;
+  font-size: 1.4rem;
+  font-weight: 900;
+  text-transform: uppercase;
+  letter-spacing: 0.1em;
+  color: #fbbf24;
+  line-height: 1.1;
+}
+
+.sb-shift-range {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.2em;
+  color: #64748b;
+}
+
+/* ---------------- Split-flap digits ---------------- */
+.sb-flip-row {
+  display: inline-flex;
+  gap: 4px;
+}
+
+.sb-flip-digit {
+  position: relative;
+  display: inline-block;
+  width: 2.1rem;
+  height: 3rem;
+  border-radius: 6px;
+  overflow: hidden;
+  background: linear-gradient(180deg, #0f172a 0%, #020617 100%);
+  border: 1px solid rgba(148, 163, 184, 0.35);
+  box-shadow:
+    inset 0 1px 4px rgba(0, 0, 0, 0.9),
+    0 0 10px rgba(16, 185, 129, 0.25);
+  font-family: ui-monospace, 'SFMono-Regular', Menlo, monospace;
+  font-size: 1.9rem;
+  font-weight: 900;
+  line-height: 3rem;
+  text-align: center;
+  color: #34d399;
+  text-shadow: 0 0 8px rgba(52, 211, 153, 0.8);
+  perspective: 300px;
+}
+
+/* Top & bottom halves of the flap */
+.sb-flip-digit__half {
+  position: absolute;
+  left: 0;
+  width: 100%;
+  height: 50%;
+  overflow: hidden;
+}
+
+.sb-flip-digit__half--top {
+  top: 0;
+  border-bottom: 1px solid rgba(148, 163, 184, 0.4);
+}
+
+.sb-flip-digit__half--bottom {
+  bottom: 0;
+  line-height: 0; /* keeps lower half glyphs aligned */
+}
+
+/* Center hinge line */
+.sb-flip-digit__hinge {
+  position: absolute;
+  top: 50%;
+  left: 0;
+  width: 100%;
+  height: 2px;
+  transform: translateY(-1px);
+  background: rgba(2, 6, 23, 0.9);
+  z-index: 3;
+}
+
+/* Incoming digit hidden until the flip lands */
+.sb-flip-digit__next {
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+  transform: rotateX(-90deg);
+  transform-origin: center top;
+}
+
+/* Flip animation when the value changes (live QR scans) */
+.sb-flip-digit--flip .sb-flip-digit__next {
+  animation: sb-flip-land 0.26s ease-in forwards;
+}
+
+.sb-flip-digit--flip .sb-flip-digit__half {
+  animation: sb-flip-out 0.26s ease-in forwards;
+}
+
+@keyframes sb-flip-out {
   from {
-    background-position-x: 0;
+    transform: rotateX(0deg);
+    opacity: 1;
   }
   to {
-    background-position-x: -48px;
+    transform: rotateX(90deg);
+    opacity: 0.2;
   }
 }
 
-.dashboard-track {
-  background-image: repeating-linear-gradient(
-    90deg,
-    rgba(255, 255, 255, 0.9) 0px,
-    rgba(255, 255, 255, 0.9) 24px,
-    transparent 24px,
-    transparent 48px
-  );
-  animation: track-dash-move 1s linear infinite;
-}
-
-/* Checkered finish strip */
-.dashboard-finish-line {
-  background-image:
-    repeating-conic-gradient(#0f172a 0% 25%, #ffffff 0% 50%);
-  background-size: 6px 6px;
-  opacity: 0.85;
-}
-
-/* Glowing tire-skid dust particles kicked up behind the car */
-@keyframes dust-puff {
-  0% {
-    opacity: 0.75;
-    transform: translate(0, 0) scale(0.6);
-  }
-  100% {
+@keyframes sb-flip-land {
+  from {
+    transform: rotateX(-90deg);
     opacity: 0;
-    transform: translate(-46px, -10px) scale(1.7);
+  }
+  to {
+    transform: rotateX(0deg);
+    opacity: 1;
   }
 }
 
-.dashboard-dust {
-  left: 0;
-  bottom: 0;
-  background: radial-gradient(circle, rgba(251, 191, 36, 0.95), rgba(148, 163, 184, 0));
-  filter: blur(1px);
-  animation: dust-puff 0.8s ease-out infinite;
+/* ---------------- Target progress ---------------- */
+.sb-progress-track {
+  height: 8px;
+  border-radius: 999px;
+  background: rgba(15, 23, 42, 0.9);
+  border: 1px solid rgba(148, 163, 184, 0.25);
+  overflow: hidden;
 }
 
-@keyframes flag-wave {
-  0%,
-  100% {
-    transform: skewY(0deg) scaleX(1);
-  }
-  50% {
-    transform: skewY(-8deg) scaleX(0.92);
-  }
+.sb-progress-fill {
+  height: 100%;
+  border-radius: 999px;
+  background: linear-gradient(90deg, #fbbf24, #34d399);
+  box-shadow: 0 0 10px rgba(52, 211, 153, 0.6);
+  transition: width 1s ease-out;
 }
 
-.dashboard-flag {
-  animation: flag-wave 0.8s ease-in-out infinite;
-  transform-origin: left center;
+/* Day-total / stats pills */
+.sb-total-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.5rem;
+  border-radius: 999px;
+  border: 1px solid rgba(251, 191, 36, 0.4);
+  background: rgba(251, 191, 36, 0.08);
+  padding: 0.35rem 0.9rem;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #fbbf24;
+}
+
+.sb-total-pill .sb-flip-digit {
+  width: 1.6rem;
+  height: 2.1rem;
+  font-size: 1.2rem;
+  line-height: 2.1rem;
+}
+
+/* View-all-shifts toggle */
+.sb-toggle {
+  border-radius: 999px;
+  border: 1px solid rgba(52, 211, 153, 0.5);
+  background: rgba(16, 185, 129, 0.15);
+  padding: 0.45rem 1.1rem;
+  font-size: 11px;
+  font-weight: 800;
+  text-transform: uppercase;
+  letter-spacing: 0.15em;
+  color: #34d399;
+  transition: all 0.2s ease;
+}
+
+.sb-toggle:hover {
+  background: rgba(16, 185, 129, 0.3);
+  box-shadow: 0 0 14px rgba(52, 211, 153, 0.4);
+}
+
+/* Expanded shift cells */
+.sb-shift-cell {
+  border-radius: 0.5rem;
+  border: 1px solid rgba(148, 163, 184, 0.2);
+  background: rgba(2, 6, 23, 0.6);
+  padding: 0.6rem 0.75rem;
+}
+
+.sb-shift-cell--live {
+  border-color: rgba(52, 211, 153, 0.7);
+  box-shadow: 0 0 12px rgba(52, 211, 153, 0.35);
+}
+
+.sb-shift-qty {
+  margin-top: 0.25rem;
+  font-family: ui-monospace, Menlo, monospace;
+  font-size: 1.15rem;
+  font-weight: 900;
+  color: #34d399;
+  text-shadow: 0 0 6px rgba(52, 211, 153, 0.6);
 }

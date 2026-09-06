@@ -12,7 +12,7 @@
 //     the 10-hour SLST shift breakdown, a Mon-Sun weekly output chart and a
 //     full-screen TV mode with continuous live refresh.
 
-import { useCallback, useEffect, useRef, useState } from 'react';
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
 import {
   AlertCircleIcon,
   BoltIcon,
@@ -26,8 +26,10 @@ import {
   fetchDashboardDepartments,
   fetchLiveDashboard,
   ROTATION_INTERVAL_MS,
+  DASH_SHIFTS,
+  shiftMinutes,
 } from '@/lib/dashboardService';
-import { formatSlstDate } from '@/lib/reportsService';
+import { formatSlstDate, formatSlstTimestamp } from '@/lib/reportsService';
 
 /** Live-data refresh cadence while the dashboard is visible (30 seconds). */
 const LIVE_REFRESH_MS = 30000;
@@ -40,6 +42,65 @@ function fmt(value, suffix = '') {
   return `${n.toLocaleString()}${suffix}`;
 }
 
+/**
+ * FlipScoreboardDigit - one mechanical split-flap digit slot.
+ * When `value` changes the digit flips like a classic scoreboard flap.
+ */
+function FlipDigit({ value }) {
+  const [display, setDisplay] = useState(value);
+  const [flipping, setFlipping] = useState(false);
+
+  useEffect(() => {
+    if (value === display) return undefined;
+    setFlipping(true);
+    const t = setTimeout(() => {
+      setDisplay(value);
+      setFlipping(false);
+    }, 260);
+    return () => clearTimeout(t);
+  }, [value, display]);
+
+  return (
+    <span
+      className={`sb-flip-digit ${flipping ? 'sb-flip-digit--flip' : ''}`}
+      aria-label={String(display)}
+    >
+      <span className="sb-flip-digit__half sb-flip-digit__half--top">{display}</span>
+      <span className="sb-flip-digit__half sb-flip-digit__half--bottom">{display}</span>
+      <span className="sb-flip-digit__next">{value}</span>
+      <span className="sb-flip-digit__hinge" />
+    </span>
+  );
+}
+
+/** Render a number as a row of flip digits (fixed width, zero padded). */
+function FlipNumber({ value, digits = 4 }) {
+  const n = Number(value);
+  const safe = Number.isFinite(n) && n >= 0 ? Math.floor(n) : 0;
+  const chars = String(Math.min(safe, 10 ** digits - 1)).padStart(digits, '0');
+  return (
+    <span className="sb-flip-row">
+      {chars.split('').map((c, i) => (
+        <FlipDigit key={`${i}-${c}`} value={c} />
+      ))}
+    </span>
+  );
+}
+
+/** Which of the 10 SLST shift hours is active right now (null pre/post shift). */
+function currentShiftIndex(slstTimeHHmm) {
+  const minutes = shiftMinutes(slstTimeHHmm);
+  for (let i = 0; i < DASH_SHIFTS.length; i += 1) {
+    if (
+      minutes >= shiftMinutes(DASH_SHIFTS[i].start) &&
+      minutes < shiftMinutes(DASH_SHIFTS[i].end)
+    ) {
+      return i;
+    }
+  }
+  return null;
+}
+
 export default function LiveDashboard() {
   const [departments, setDepartments] = useState([]);
   const [departmentId, setDepartmentId] = useState('');
@@ -50,6 +111,7 @@ export default function LiveDashboard() {
   const [lastUpdated, setLastUpdated] = useState(null);
   const [isTv, setIsTv] = useState(false);
   const [rotationIndex, setRotationIndex] = useState(0);
+  const [showAllShifts, setShowAllShifts] = useState(false);
   const dateTouched = useRef(false);
 
   // Default date = today (SLST); auto-rotation only runs in this unfiltered state.
@@ -161,6 +223,21 @@ export default function LiveDashboard() {
     setRotationIndex(0);
   };
 
+  // Current SLST clock time (updates every 30s alongside live refresh).
+  const [slstNow, setSlstNow] = useState(() => formatSlstTimestamp(new Date()).slice(11, 16));
+  useEffect(() => {
+    const t = setInterval(
+      () => setSlstNow(formatSlstTimestamp(new Date()).slice(11, 16)),
+      30000
+    );
+    return () => clearInterval(t);
+  }, []);
+
+  // Active shift + its live output for the main scoreboard counter.
+  const activeShiftIdx = useMemo(() => currentShiftIndex(slstNow), [slstNow]);
+  const activeShift =
+    activeShiftIdx !== null && data ? data.hourly[activeShiftIdx] : null;
+
   return (
     <div className="mx-auto max-w-7xl animate-fade-slide">
       {/* Toolbar: filters + fullscreen toggle */}
@@ -217,148 +294,120 @@ export default function LiveDashboard() {
         </div>
       ) : (
         <>
-          {/* Horse race header */}
-          <section className="mt-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-bold text-slate-900">{data.departmentId}</span>
-              <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
-                Target: {fmt(data.metrics.plannedQty)} units
-              </span>
-            </div>
-            <div className="dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200">
-              {/* Racing lane surface */}
-              <div className="dashboard-lane absolute inset-x-0 bottom-0 h-16" />
-              {/* Lane markers (moving dashes) */}
-              <div className="dashboard-track absolute bottom-4 left-0 h-1 w-full" />
-
-              {/* Finish line + waving flag on the right */}
-              <div className="absolute right-0 top-0 flex h-full w-16 flex-col items-center justify-end pb-6">
-                <span className="mb-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 shadow-sm ring-1 ring-slate-200">
-                  Finish {fmt(data.metrics.plannedQty)}
+          {/* Retro cricket scoreboard header */}
+          <section className="mt-4 overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800">
+            <div className="dashboard-scoreboard relative p-5">
+              {/* Marquee strip */}
+              <div className="sb-marquee mb-4 flex items-center justify-between">
+                <span className="text-[11px] font-black uppercase tracking-[0.3em] text-amber-400">
+                  🏏 Concord TrackSync · Live Score
                 </span>
-                <div className="relative h-16 w-8">
-                  <div className="absolute bottom-0 left-1/2 h-16 w-1 -translate-x-1/2 rounded bg-slate-300" />
-                  <svg
-                    className="dashboard-flag absolute left-2 top-0 h-7 w-9 drop-shadow"
-                    viewBox="0 0 36 28"
-                    aria-hidden="true"
-                  >
-                    <defs>
-                      <linearGradient id="flagGrad" x1="0" y1="0" x2="1" y2="1">
-                        <stop offset="0%" stopColor="#6366f1" />
-                        <stop offset="100%" stopColor="#0ea5e9" />
-                      </linearGradient>
-                    </defs>
-                    <path
-                      d="M2 2 L32 5 L26 13 L32 21 L2 24 Z"
-                      fill="url(#flagGrad)"
-                    />
-                  </svg>
+                <span className="text-[11px] font-bold uppercase tracking-widest text-emerald-300">
+                  {data.departmentId} · {date}
+                </span>
+              </div>
+
+              <div className="grid gap-4 lg:grid-cols-3">
+                {/* MAIN SCORE: current shift with flip digits */}
+                <div className="sb-panel lg:col-span-2">
+                  <p className="sb-label">Current Shift Output</p>
+                  {activeShift ? (
+                    <>
+                      <div className="flex items-end gap-4">
+                        <span className="sb-shift-name">
+                          {activeShift.label}
+                          <span className="sb-shift-range">{activeShift.range}</span>
+                        </span>
+                        <FlipNumber value={activeShift.qty} digits={3} />
+                      </div>
+                      <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-emerald-300">
+                        ● Live · units this hour (valid scans only)
+                      </p>
+                    </>
+                  ) : (
+                    <>
+                      <div className="flex items-end gap-4">
+                        <span className="sb-shift-name">
+                          Stumps
+                          <span className="sb-shift-range">Shift over / not started</span>
+                        </span>
+                        <FlipNumber value={data.actualQty} digits={3} />
+                      </div>
+                      <p className="mt-2 text-[11px] font-bold uppercase tracking-widest text-slate-400">
+                        Day total · next shift 7.45 AM
+                      </p>
+                    </>
+                  )}
                 </div>
-                {/* Checkered finish strip */}
-                <div className="dashboard-finish-line absolute bottom-0 right-0 h-14 w-3" />
+
+                {/* TARGET + achievement */}
+                <div className="sb-panel">
+                  <p className="sb-label">Target (planed_qty)</p>
+                  <div className="flex items-end gap-3">
+                    <FlipNumber value={data.metrics.plannedQty} digits={4} />
+                  </div>
+                  <div className="mt-3">
+                    <div className="sb-progress-track">
+                      <div
+                        className="sb-progress-fill"
+                        style={{ width: `${Math.round(data.progress * 100)}%` }}
+                      />
+                    </div>
+                    <p className="mt-2 flex items-center justify-between text-[11px] font-bold uppercase tracking-widest">
+                      <span className="text-amber-300">{fmt(data.actualQty)} scored</span>
+                      <span
+                        className={
+                          data.progress >= 1 ? 'text-emerald-300' : 'text-sky-300'
+                        }
+                      >
+                        {data.progress >= 1
+                          ? '🎯 Target achieved!'
+                          : `${Math.round(data.progress * 100)}% chasing`}
+                      </span>
+                    </p>
+                  </div>
+                </div>
               </div>
 
-              {/* Dust particles trailing the horse */}
-              <div
-                className="pointer-events-none absolute bottom-6 transition-all duration-1000 ease-out"
-                style={{ left: `${(data.progress * 100).toFixed(1)}%` }}
-              >
-                {[0, 1, 2, 3].map((i) => (
-                  <span
-                    key={i}
-                    className="dashboard-dust absolute rounded-full"
-                    style={{
-                      width: `${6 + i * 3}px`,
-                      height: `${6 + i * 3}px`,
-                      animationDelay: `${i * 0.22}s`,
-                    }}
-                  />
-                ))}
-              </div>
-
-              {/* Red sports car: position maps exactly to completion % */}
-              <div
-                className="absolute bottom-2 flex flex-col items-center transition-[left] duration-1000 ease-out"
-                style={{
-                  left: `calc((100% - 96px) * ${data.progress.toFixed(4)})`,
-                }}
-              >
-                {/* Glowing live progress badge above the car */}
-                <span className="dashboard-progress-badge mb-1 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-extrabold text-white shadow-lg">
-                  {fmt(data.actualQty)} / {fmt(data.metrics.plannedQty)}
-                  <span className="ml-1 font-bold opacity-80">
-                    {Math.round(data.progress * 100)}%
-                  </span>
+              {/* Bottom strip: total + toggle */}
+              <div className="mt-4 flex flex-wrap items-center gap-3">
+                <span className="sb-total-pill">
+                  Day total: <FlipNumber value={data.actualQty} digits={4} />
                 </span>
-                {/* Detailed SVG red sports car, wheels spinning continuously */}
-                <svg
-                  className="dashboard-car h-16 w-28 drop-shadow-lg"
-                  viewBox="0 0 140 70"
-                  aria-label={`Red sports car at ${Math.round(data.progress * 100)}% of plan`}
+                <span className="sb-total-pill">
+                  Efficiency: {fmt(data.metrics.efficiency)} · Man power:{' '}
+                  {fmt(data.metrics.manPower)}
+                </span>
+                <button
+                  type="button"
+                  onClick={() => setShowAllShifts((v) => !v)}
+                  className="sb-toggle ml-auto"
+                  aria-expanded={showAllShifts}
                 >
-                  <defs>
-                    <linearGradient id="carBody" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f87171" />
-                      <stop offset="55%" stopColor="#dc2626" />
-                      <stop offset="100%" stopColor="#991b1b" />
-                    </linearGradient>
-                    <linearGradient id="carGlass" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#e0f2fe" />
-                      <stop offset="100%" stopColor="#7dd3fc" />
-                    </linearGradient>
-                    <radialGradient id="exhaustGlow">
-                      <stop offset="0%" stopColor="rgba(251,146,60,0.95)" />
-                      <stop offset="100%" stopColor="rgba(251,146,60,0)" />
-                    </radialGradient>
-                  </defs>
-
-                  {/* Glowing exhaust flame */}
-                  <circle className="dashboard-exhaust" cx="6" cy="46" r="10" fill="url(#exhaustGlow)" />
-
-                  {/* Lower body */}
-                  <path
-                    d="M12 52 Q10 42 24 40 L38 38 Q52 24 70 24 Q92 24 104 38 L120 40 Q132 42 130 52 Q130 56 124 56 L18 56 Q12 56 12 52 Z"
-                    fill="url(#carBody)"
-                  />
-                  {/* Cabin / windshield */}
-                  <path
-                    d="M44 38 Q54 27 70 27 Q88 27 98 38 Z"
-                    fill="url(#carGlass)"
-                  />
-                  {/* Roof highlight */}
-                  <path d="M46 37 Q56 28 70 28 Q86 28 96 37" fill="none" stroke="#fecaca" strokeWidth="1.5" opacity="0.8" />
-                  {/* Side skirt + spoiler */}
-                  <rect x="12" y="50" width="120" height="3" rx="1.5" fill="#7f1d1d" />
-                  <path d="M118 36 L132 32 L132 38 L120 41 Z" fill="#b91c1c" />
-                  {/* Headlight */}
-                  <path d="M122 43 L130 45 L130 49 L122 48 Z" fill="#fef08a" />
-                  <path className="dashboard-headlight" d="M130 44 L138 42 L138 52 L130 50 Z" fill="rgba(254,240,138,0.5)" />
-                  {/* Racing stripe */}
-                  <rect x="58" y="25" width="6" height="12" rx="3" fill="#fef2f2" opacity="0.9" />
-
-                  {/* Rear wheel (spinning) */}
-                  <g className="dashboard-wheel" style={{ transformOrigin: '36px 54px' }}>
-                    <circle cx="36" cy="54" r="11" fill="#111827" />
-                    <circle cx="36" cy="54" r="5" fill="#9ca3af" />
-                    <rect x="34.8" y="45.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
-                    <rect x="34.8" y="54.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
-                  </g>
-                  {/* Front wheel (spinning) */}
-                  <g className="dashboard-wheel" style={{ transformOrigin: '106px 54px' }}>
-                    <circle cx="106" cy="54" r="11" fill="#111827" />
-                    <circle cx="106" cy="54" r="5" fill="#9ca3af" />
-                    <rect x="104.8" y="45.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
-                    <rect x="104.8" y="54.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
-                  </g>
-                </svg>
+                  {showAllShifts ? '▲ Hide All Shifts' : '▼ View All Shifts'}
+                </button>
               </div>
-            </div>
-            <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
-              <div
-                className="h-full rounded-full bg-gradient-to-r from-emerald-500 to-indigo-600 transition-all duration-1000"
-                style={{ width: `${Math.round(data.progress * 100)}%` }}
-              />
+
+              {/* Expandable full 10-shift breakdown */}
+              {showAllShifts ? (
+                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+                  {data.hourly.map((h, i) => (
+                    <div
+                      key={h.label}
+                      className={`sb-shift-cell ${i === activeShiftIdx ? 'sb-shift-cell--live' : ''}`}
+                    >
+                      <p className="text-[10px] font-bold uppercase tracking-widest text-amber-400">
+                        {h.label}
+                      </p>
+                      <p className="text-[10px] text-slate-400">{h.range}</p>
+                      <p className="sb-shift-qty">
+                        {i === activeShiftIdx ? '● ' : ''}
+                        {h.qty}
+                      </p>
+                    </div>
+                  ))}
+                </div>
+              ) : null}
             </div>
           </section>
 
