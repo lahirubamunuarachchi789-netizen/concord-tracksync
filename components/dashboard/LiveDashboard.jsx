@@ -225,23 +225,126 @@ export default function LiveDashboard() {
                 Target: {fmt(data.metrics.plannedQty)} units
               </span>
             </div>
-            <div className="relative h-28 overflow-hidden rounded-xl bg-gradient-to-b from-emerald-50 to-white ring-1 ring-slate-100">
-              {/* Finish line flag + target */}
-              <div className="absolute right-3 top-2 flex-col items-center">
-                <span className="text-[11px] font-bold text-slate-500">Finish</span>
-                <div className="dashboard-flag text-2xl">🏁</div>
-              </div>
-              {/* Track */}
-              <div className="dashboard-track absolute bottom-6 left-0 h-1.5 w-full" />
-              {/* Horse: position = progress ratio */}
-              <div
-                className="absolute bottom-3 flex-col items-center transition-all duration-1000 ease-out"
-                style={{ left: `calc(${(data.progress * 100).toFixed(1)}% - 24px)` }}
-              >
-                <span className="mb-0.5 rounded-full bg-slate-900 px-2 py-0.5 text-[11px] font-bold text-white">
-                  {fmt(data.actualQty)}
+            <div className="dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200">
+              {/* Racing lane surface */}
+              <div className="dashboard-lane absolute inset-x-0 bottom-0 h-16" />
+              {/* Lane markers (moving dashes) */}
+              <div className="dashboard-track absolute bottom-4 left-0 h-1 w-full" />
+
+              {/* Finish line + waving flag on the right */}
+              <div className="absolute right-0 top-0 flex h-full w-16 flex-col items-center justify-end pb-6">
+                <span className="mb-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 shadow-sm ring-1 ring-slate-200">
+                  Finish {fmt(data.metrics.plannedQty)}
                 </span>
-                <span className="dashboard-horse text-3xl">🐎</span>
+                <div className="relative h-16 w-8">
+                  <div className="absolute bottom-0 left-1/2 h-16 w-1 -translate-x-1/2 rounded bg-slate-300" />
+                  <svg
+                    className="dashboard-flag absolute left-2 top-0 h-7 w-9 drop-shadow"
+                    viewBox="0 0 36 28"
+                    aria-hidden="true"
+                  >
+                    <defs>
+                      <linearGradient id="flagGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" />
+                        <stop offset="100%" stopColor="#0ea5e9" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M2 2 L32 5 L26 13 L32 21 L2 24 Z"
+                      fill="url(#flagGrad)"
+                    />
+                  </svg>
+                </div>
+                {/* Checkered finish strip */}
+                <div className="dashboard-finish-line absolute bottom-0 right-0 h-14 w-3" />
+              </div>
+
+              {/* Dust particles trailing the horse */}
+              <div
+                className="pointer-events-none absolute bottom-6 transition-all duration-1000 ease-out"
+                style={{ left: `${(data.progress * 100).toFixed(1)}%` }}
+              >
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    className="dashboard-dust absolute rounded-full"
+                    style={{
+                      width: `${6 + i * 3}px`,
+                      height: `${6 + i * 3}px`,
+                      animationDelay: `${i * 0.22}s`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Horse + jockey: position maps exactly to completion % */}
+              <div
+                className="absolute bottom-2 flex flex-col items-center transition-[left] duration-1000 ease-out"
+                style={{
+                  left: `calc((100% - 96px) * ${data.progress.toFixed(4)})`,
+                }}
+              >
+                {/* Glowing live progress badge above the rider */}
+                <span className="dashboard-progress-badge mb-1 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-extrabold text-white shadow-lg">
+                  {fmt(data.actualQty)} / {fmt(data.metrics.plannedQty)}
+                  <span className="ml-1 font-bold opacity-80">
+                    {Math.round(data.progress * 100)}%
+                  </span>
+                </span>
+                {/* Detailed SVG racehorse + jockey, continuous gallop */}
+                <svg
+                  className="dashboard-horse h-16 w-24 drop-shadow-lg"
+                  viewBox="0 0 120 80"
+                  aria-label={`Horse at ${Math.round(data.progress * 100)}% of plan`}
+                >
+                  {/* Rear leg */}
+                  <g className="dashboard-leg-rear">
+                    <path d="M28 52 L20 68 L24 70 L34 56 Z" fill="#8b5cf6" />
+                  </g>
+                  {/* Front leg */}
+                  <g className="dashboard-leg-front">
+                    <path d="M80 52 L90 68 L86 70 L74 56 Z" fill="#7c3aed" />
+                  </g>
+                  {/* Body */}
+                  <ellipse cx="55" cy="45" rx="32" ry="16" fill="url(#horseBody)" />
+                  <defs>
+                    <linearGradient id="horseBody" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#a78bfa" />
+                      <stop offset="100%" stopColor="#6d28d9" />
+                    </linearGradient>
+                    <linearGradient id="riderGrad" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f59e0b" />
+                      <stop offset="100%" stopColor="#d97706" />
+                    </linearGradient>
+                  </defs>
+                  {/* Neck + head */}
+                  <path
+                    d="M82 40 Q92 32 96 22 L104 26 Q102 40 88 48 Z"
+                    fill="#7c3aed"
+                  />
+                  <circle cx="100" cy="24" r="6" fill="#6d28d9" />
+                  <path d="M104 22 L110 24 L104 27 Z" fill="#4c1d95" />
+                  {/* Mane + tail */}
+                  <path
+                    className="dashboard-mane"
+                    d="M92 18 Q84 14 76 22 Q82 22 88 26 Z"
+                    fill="#312e81"
+                  />
+                  <path
+                    className="dashboard-tail"
+                    d="M24 40 Q10 36 6 24 Q16 30 26 34 Z"
+                    fill="#312e81"
+                  />
+                  {/* Jockey */}
+                  <g>
+                    <path d="M48 30 Q56 18 68 26 L64 36 Q54 34 48 36 Z" fill="url(#riderGrad)" />
+                    <circle cx="66" cy="22" r="6" fill="#fcd34d" />
+                    <path d="M60 18 Q66 12 72 18 L70 22 Q66 18 62 22 Z" fill="#dc2626" />
+                    <path d="M60 30 L78 24 L80 28 L62 34 Z" fill="#fcd34d" />
+                  </g>
+                  {/* Saddle */}
+                  <rect x="44" y="36" width="22" height="7" rx="3" fill="#1e293b" />
+                </svg>
               </div>
             </div>
             <div className="mt-2 h-2 overflow-hidden rounded-full bg-slate-100">
