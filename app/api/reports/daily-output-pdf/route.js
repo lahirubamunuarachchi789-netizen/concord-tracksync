@@ -5,10 +5,15 @@
 // PDF (pdfkit) and returns it as a downloadable application/pdf response.
 
 import { NextResponse } from 'next/server';
+// Server-only imports: reportsService (DB access + aggregation) and the
+// pdfkit-based PDF builder must run in the Node.js runtime on the server.
 import { fetchDailyOutputReport } from '@/lib/reportsService';
 import { buildDailyOutputPdf } from '@/lib/pdfReportService';
 
 export const dynamic = 'force-dynamic';
+// Pin the Node.js runtime: pdfkit depends on Node built-ins (fs, path) and
+// the report aggregation hits the database - neither can run on the edge.
+export const runtime = 'nodejs';
 
 export async function GET(request) {
   const { searchParams } = new URL(request.url);
