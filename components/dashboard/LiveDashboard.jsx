@@ -277,73 +277,80 @@ export default function LiveDashboard() {
                 ))}
               </div>
 
-              {/* Horse + jockey: position maps exactly to completion % */}
+              {/* Red sports car: position maps exactly to completion % */}
               <div
                 className="absolute bottom-2 flex flex-col items-center transition-[left] duration-1000 ease-out"
                 style={{
                   left: `calc((100% - 96px) * ${data.progress.toFixed(4)})`,
                 }}
               >
-                {/* Glowing live progress badge above the rider */}
+                {/* Glowing live progress badge above the car */}
                 <span className="dashboard-progress-badge mb-1 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-extrabold text-white shadow-lg">
                   {fmt(data.actualQty)} / {fmt(data.metrics.plannedQty)}
                   <span className="ml-1 font-bold opacity-80">
                     {Math.round(data.progress * 100)}%
                   </span>
                 </span>
-                {/* Detailed SVG racehorse + jockey, continuous gallop */}
+                {/* Detailed SVG red sports car, wheels spinning continuously */}
                 <svg
-                  className="dashboard-horse h-16 w-24 drop-shadow-lg"
-                  viewBox="0 0 120 80"
-                  aria-label={`Horse at ${Math.round(data.progress * 100)}% of plan`}
+                  className="dashboard-car h-16 w-28 drop-shadow-lg"
+                  viewBox="0 0 140 70"
+                  aria-label={`Red sports car at ${Math.round(data.progress * 100)}% of plan`}
                 >
-                  {/* Rear leg */}
-                  <g className="dashboard-leg-rear">
-                    <path d="M28 52 L20 68 L24 70 L34 56 Z" fill="#8b5cf6" />
-                  </g>
-                  {/* Front leg */}
-                  <g className="dashboard-leg-front">
-                    <path d="M80 52 L90 68 L86 70 L74 56 Z" fill="#7c3aed" />
-                  </g>
-                  {/* Body */}
-                  <ellipse cx="55" cy="45" rx="32" ry="16" fill="url(#horseBody)" />
                   <defs>
-                    <linearGradient id="horseBody" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#a78bfa" />
-                      <stop offset="100%" stopColor="#6d28d9" />
+                    <linearGradient id="carBody" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f87171" />
+                      <stop offset="55%" stopColor="#dc2626" />
+                      <stop offset="100%" stopColor="#991b1b" />
                     </linearGradient>
-                    <linearGradient id="riderGrad" x1="0" y1="0" x2="0" y2="1">
-                      <stop offset="0%" stopColor="#f59e0b" />
-                      <stop offset="100%" stopColor="#d97706" />
+                    <linearGradient id="carGlass" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#e0f2fe" />
+                      <stop offset="100%" stopColor="#7dd3fc" />
                     </linearGradient>
+                    <radialGradient id="exhaustGlow">
+                      <stop offset="0%" stopColor="rgba(251,146,60,0.95)" />
+                      <stop offset="100%" stopColor="rgba(251,146,60,0)" />
+                    </radialGradient>
                   </defs>
-                  {/* Neck + head */}
+
+                  {/* Glowing exhaust flame */}
+                  <circle className="dashboard-exhaust" cx="6" cy="46" r="10" fill="url(#exhaustGlow)" />
+
+                  {/* Lower body */}
                   <path
-                    d="M82 40 Q92 32 96 22 L104 26 Q102 40 88 48 Z"
-                    fill="#7c3aed"
+                    d="M12 52 Q10 42 24 40 L38 38 Q52 24 70 24 Q92 24 104 38 L120 40 Q132 42 130 52 Q130 56 124 56 L18 56 Q12 56 12 52 Z"
+                    fill="url(#carBody)"
                   />
-                  <circle cx="100" cy="24" r="6" fill="#6d28d9" />
-                  <path d="M104 22 L110 24 L104 27 Z" fill="#4c1d95" />
-                  {/* Mane + tail */}
+                  {/* Cabin / windshield */}
                   <path
-                    className="dashboard-mane"
-                    d="M92 18 Q84 14 76 22 Q82 22 88 26 Z"
-                    fill="#312e81"
+                    d="M44 38 Q54 27 70 27 Q88 27 98 38 Z"
+                    fill="url(#carGlass)"
                   />
-                  <path
-                    className="dashboard-tail"
-                    d="M24 40 Q10 36 6 24 Q16 30 26 34 Z"
-                    fill="#312e81"
-                  />
-                  {/* Jockey */}
-                  <g>
-                    <path d="M48 30 Q56 18 68 26 L64 36 Q54 34 48 36 Z" fill="url(#riderGrad)" />
-                    <circle cx="66" cy="22" r="6" fill="#fcd34d" />
-                    <path d="M60 18 Q66 12 72 18 L70 22 Q66 18 62 22 Z" fill="#dc2626" />
-                    <path d="M60 30 L78 24 L80 28 L62 34 Z" fill="#fcd34d" />
+                  {/* Roof highlight */}
+                  <path d="M46 37 Q56 28 70 28 Q86 28 96 37" fill="none" stroke="#fecaca" strokeWidth="1.5" opacity="0.8" />
+                  {/* Side skirt + spoiler */}
+                  <rect x="12" y="50" width="120" height="3" rx="1.5" fill="#7f1d1d" />
+                  <path d="M118 36 L132 32 L132 38 L120 41 Z" fill="#b91c1c" />
+                  {/* Headlight */}
+                  <path d="M122 43 L130 45 L130 49 L122 48 Z" fill="#fef08a" />
+                  <path className="dashboard-headlight" d="M130 44 L138 42 L138 52 L130 50 Z" fill="rgba(254,240,138,0.5)" />
+                  {/* Racing stripe */}
+                  <rect x="58" y="25" width="6" height="12" rx="3" fill="#fef2f2" opacity="0.9" />
+
+                  {/* Rear wheel (spinning) */}
+                  <g className="dashboard-wheel" style={{ transformOrigin: '36px 54px' }}>
+                    <circle cx="36" cy="54" r="11" fill="#111827" />
+                    <circle cx="36" cy="54" r="5" fill="#9ca3af" />
+                    <rect x="34.8" y="45.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                    <rect x="34.8" y="54.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
                   </g>
-                  {/* Saddle */}
-                  <rect x="44" y="36" width="22" height="7" rx="3" fill="#1e293b" />
+                  {/* Front wheel (spinning) */}
+                  <g className="dashboard-wheel" style={{ transformOrigin: '106px 54px' }}>
+                    <circle cx="106" cy="54" r="11" fill="#111827" />
+                    <circle cx="106" cy="54" r="5" fill="#9ca3af" />
+                    <rect x="104.8" y="45.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                    <rect x="104.8" y="54.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                  </g>
                 </svg>
               </div>
             </div>

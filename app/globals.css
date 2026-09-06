@@ -64,83 +64,76 @@ body.tv-mode .app-shell-main {
 }
 
 /* ------------------------------------------------------------
-   Live Dashboard - advanced horse race animation
-   Fluid gallop (body bob + independent legs), glowing progress
-   badge, racing lane, dust particles and waving finish flag.
+   Live Dashboard - advanced red sports car race animation
+   Spinning wheels, vibrating chassis, glowing exhaust trail,
+   tire-skid dust, racing lane and waving finish flag.
    ------------------------------------------------------------ */
-@keyframes horse-gallop {
+/* Continuous wheel rotation */
+@keyframes wheel-spin {
+  from {
+    transform: rotate(0deg);
+  }
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.dashboard-wheel {
+  animation: wheel-spin 0.35s linear infinite;
+  transform-box: view-box;
+}
+
+/* Subtle chassis vibration for a running engine */
+@keyframes car-vibrate {
   0%,
   100% {
-    transform: translateY(0) rotate(0deg);
+    transform: translateY(0);
   }
   25% {
-    transform: translateY(-4px) rotate(-1deg);
-  }
-  50% {
-    transform: translateY(0) rotate(0.5deg);
+    transform: translateY(-1.5px);
   }
   75% {
-    transform: translateY(-3px) rotate(1deg);
+    transform: translateY(1px);
   }
 }
 
-.dashboard-horse {
-  animation: horse-gallop 0.45s ease-in-out infinite;
+.dashboard-car {
+  animation: car-vibrate 0.18s linear infinite;
   will-change: transform;
-  transform-origin: center bottom;
 }
 
-/* Independent pumping legs for a fluid stride */
-@keyframes leg-front-pump {
+/* Glowing exhaust flame pulse */
+@keyframes exhaust-pulse {
   0%,
   100% {
-    transform: rotate(24deg);
+    opacity: 0.5;
+    transform: scale(0.85) translateX(0);
   }
   50% {
-    transform: rotate(-22deg);
+    opacity: 1;
+    transform: scale(1.15) translateX(-3px);
   }
 }
 
-@keyframes leg-rear-pump {
+.dashboard-exhaust {
+  animation: exhaust-pulse 0.4s ease-in-out infinite;
+  transform-origin: 6px 46px;
+  transform-box: view-box;
+}
+
+/* Headlight beam flicker */
+@keyframes headlight-flicker {
   0%,
   100% {
-    transform: rotate(-22deg);
+    opacity: 0.35;
   }
   50% {
-    transform: rotate(24deg);
+    opacity: 0.7;
   }
 }
 
-.dashboard-leg-front,
-.dashboard-leg-rear {
-  transform-origin: 50% 40%;
-  transform-box: fill-box;
-}
-
-.dashboard-leg-front {
-  animation: leg-front-pump 0.45s ease-in-out infinite;
-}
-
-.dashboard-leg-rear {
-  animation: leg-rear-pump 0.45s ease-in-out infinite;
-}
-
-/* Flowing mane + tail */
-@keyframes mane-flow {
-  0%,
-  100% {
-    transform: skewY(4deg) translateX(0);
-  }
-  50% {
-    transform: skewY(-4deg) translateX(-2px);
-  }
-}
-
-.dashboard-mane,
-.dashboard-tail {
-  animation: mane-flow 0.55s ease-in-out infinite;
-  transform-origin: right center;
-  transform-box: fill-box;
+.dashboard-headlight {
+  animation: headlight-flicker 1.2s ease-in-out infinite;
 }
 
 /* Glowing progress badge pinned above the rider */
@@ -209,24 +202,24 @@ body.tv-mode .app-shell-main {
   opacity: 0.85;
 }
 
-/* Glowing dust particles kicked up behind the horse */
+/* Glowing tire-skid dust particles kicked up behind the car */
 @keyframes dust-puff {
   0% {
-    opacity: 0.7;
+    opacity: 0.75;
     transform: translate(0, 0) scale(0.6);
   }
   100% {
     opacity: 0;
-    transform: translate(-42px, -14px) scale(1.6);
+    transform: translate(-46px, -10px) scale(1.7);
   }
 }
 
 .dashboard-dust {
   left: 0;
   bottom: 0;
-  background: radial-gradient(circle, rgba(251, 191, 36, 0.9), rgba(251, 191, 36, 0));
+  background: radial-gradient(circle, rgba(251, 191, 36, 0.95), rgba(148, 163, 184, 0));
   filter: blur(1px);
-  animation: dust-puff 0.9s ease-out infinite;
+  animation: dust-puff 0.8s ease-out infinite;
 }
 
 @keyframes flag-wave {
