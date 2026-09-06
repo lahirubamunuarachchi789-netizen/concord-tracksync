@@ -27,3 +27,8 @@ install-err.log
 *.pem
 .vercel
 *.tsbuildinfo
+
+# IDE / editor directories
+.vscode/
+.continue/
+

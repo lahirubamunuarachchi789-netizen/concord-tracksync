@@ -8,7 +8,7 @@
 // via SheetJS (sheetjs/xlsx, lazily imported).
 
 import { useCallback, useEffect, useState } from 'react';
-import { ChevronDownIcon, DownloadIcon, SpinnerIcon } from '@/components/icons';
+import { ChevronDownIcon, DownloadIcon, FileTextIcon, SpinnerIcon } from '@/components/icons';
 import {
   buildDailyOutputXlsx,
   fetchDailyOutputReport,
@@ -41,6 +41,19 @@ function downloadXlsx(fileName, buffer) {
   URL.revokeObjectURL(url);
 }
 
+/** Trigger a browser download for the generated PDF document. */
+function downloadPdf(fileName, buffer) {
+  const blob = new Blob([buffer], { type: 'application/pdf' });
+  const url = URL.createObjectURL(blob);
+  const link = document.createElement('a');
+  link.href = url;
+  link.download = fileName;
+  document.body.appendChild(link);
+  link.click();
+  document.body.removeChild(link);
+  URL.revokeObjectURL(url);
+}
+
 export default function DailyOutputView() {
   const [departments, setDepartments] = useState([]);
   const [departmentId, setDepartmentId] = useState('');
@@ -51,7 +64,9 @@ export default function DailyOutputView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
   const [exporting, setExporting] = useState(false);
+  const [exportingPdf, setExportingPdf] = useState(false);
   const [exportError, setExportError] = useState(null);
+  const [exportPdfError, setExportPdfError] = useState(null);
 
   // Default date = today in YYYY-MM-DD SLST format.
   useEffect(() => {
@@ -104,6 +119,31 @@ export default function DailyOutputView() {
     }
   }, [matrix, departmentId, date, recordStatus, qcStatus]);
 
+  const handlePdfExport = useCallback(async () => {
+    if (!matrix || !date) return;
+    setExportingPdf(true);
+    setExportPdfError(null);
+    try {
+      const params = new URLSearchParams({
+        departmentId,
+        date,
+        recordStatus,
+        qcStatus,
+      });
+      const res = await fetch(`/api/reports/daily-output-pdf?${params.toString()}`);
+      if (!res.ok) {
+        const body = await res.json().catch(() => ({}));
+        throw new Error(body?.error || 'Failed to export PDF.');
+      }
+      const blob = await res.blob();
+      const fileName = `Daily_Output_Report_${date}.pdf`;
+      downloadPdf(fileName, await blob.arrayBuffer());
+    } catch (err) {
+      setExportPdfError(err?.message || 'Failed to export PDF.');
+    } finally {
+      setExportingPdf(false);
+    }
+  }, [matrix, departmentId, date, recordStatus, qcStatus]);
   return (
     <section aria-labelledby="daily-output-heading">
       <h3
@@ -198,6 +238,26 @@ export default function DailyOutputView() {
           )}
         </button>
 
+        {/* Download PDF */}
+        <button
+          type="button"
+          onClick={handlePdfExport}
+          disabled={exportingPdf || !matrix}
+          className="inline-flex items-center gap-2 rounded-lg border border-red-600 bg-red-50 px-4 py-2 text-sm font-medium text-red-700 shadow-sm transition-colors hover:bg-red-100 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {exportingPdf ? (
+            <>
+              <SpinnerIcon className="h-4 w-4 animate-spin" />
+              Exporting
+            </>
+          ) : (
+            <>
+              <FileTextIcon className="h-4 w-4" />
+              Download PDF
+            </>
+          )}
+        </button>
+
         {/* Export to Excel (.xlsx) */}
         <button
           type="button"
@@ -228,6 +288,12 @@ export default function DailyOutputView() {
       {exportError && (
         <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
           {exportError}
+        </div>
+      )}
+
+      {exportPdfError && (
+        <div className="mt-4 rounded-lg border border-red-200 bg-red-50 px-4 py-3 text-sm text-red-700">
+          {exportPdfError}
         </div>
       )}
 

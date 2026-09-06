@@ -13,6 +13,7 @@
     "@supabase/supabase-js": "^2.48.1",
     "html5-qrcode": "^2.3.8",
     "next": "^15.5.25",
+    "pdfkit": "^0.15.0",
     "react": "^19.0.0",
     "react-dom": "^19.0.0",
     "xlsx": "^0.18.5"
