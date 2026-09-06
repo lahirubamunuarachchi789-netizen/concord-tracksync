@@ -294,7 +294,146 @@ export default function LiveDashboard() {
         </div>
       ) : (
         <>
-          {/* Retro cricket scoreboard header */}
+          {/* Red sports car race track (kept) */}
+          <section className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+            <div className="mb-2 flex items-center justify-between text-sm">
+              <span className="font-bold text-slate-900">{data.departmentId}</span>
+              <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
+                Target: {fmt(data.metrics.plannedQty)} units
+              </span>
+            </div>
+            <div className="dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200">
+              {/* Racing lane surface */}
+              <div className="dashboard-lane absolute inset-x-0 bottom-0 h-16" />
+              {/* Lane markers (moving dashes) */}
+              <div className="dashboard-track absolute bottom-4 left-0 h-1 w-full" />
+
+              {/* Finish line + waving flag on the right */}
+              <div className="absolute right-0 top-0 flex h-full w-16 flex-col items-center justify-end pb-6">
+                <span className="mb-1 rounded-full bg-white/90 px-2 py-0.5 text-[10px] font-bold uppercase tracking-wide text-slate-600 shadow-sm ring-1 ring-slate-200">
+                  Finish {fmt(data.metrics.plannedQty)}
+                </span>
+                <div className="relative h-16 w-8">
+                  <div className="absolute bottom-0 left-1/2 h-16 w-1 -translate-x-1/2 rounded bg-slate-300" />
+                  <svg
+                    className="dashboard-flag absolute left-2 top-0 h-7 w-9 drop-shadow"
+                    viewBox="0 0 36 28"
+                    aria-hidden="true"
+                  >
+                    <defs>
+                      <linearGradient id="flagGrad" x1="0" y1="0" x2="1" y2="1">
+                        <stop offset="0%" stopColor="#6366f1" />
+                        <stop offset="100%" stopColor="#0ea5e9" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M2 2 L32 5 L26 13 L32 21 L2 24 Z"
+                      fill="url(#flagGrad)"
+                    />
+                  </svg>
+                </div>
+                {/* Checkered finish strip */}
+                <div className="dashboard-finish-line absolute bottom-0 right-0 h-14 w-3" />
+              </div>
+
+              {/* Tire-skid dust trailing the car */}
+              <div
+                className="pointer-events-none absolute bottom-6 transition-all duration-1000 ease-out"
+                style={{ left: `${(data.progress * 100).toFixed(1)}%` }}
+              >
+                {[0, 1, 2, 3].map((i) => (
+                  <span
+                    key={i}
+                    className="dashboard-dust absolute rounded-full"
+                    style={{
+                      width: `${6 + i * 3}px`,
+                      height: `${6 + i * 3}px`,
+                      animationDelay: `${i * 0.22}s`,
+                    }}
+                  />
+                ))}
+              </div>
+
+              {/* Red sports car: position maps exactly to completion % */}
+              <div
+                className="absolute bottom-2 flex-col items-center transition-[left] duration-1000 ease-out"
+                style={{
+                  left: `calc((100% - 96px) * ${data.progress.toFixed(4)})`,
+                }}
+              >
+                {/* Glowing live progress badge above the car */}
+                <span className="dashboard-progress-badge mb-1 whitespace-nowrap rounded-full px-3 py-1 text-[11px] font-extrabold text-white shadow-lg">
+                  {fmt(data.actualQty)} / {fmt(data.metrics.plannedQty)}
+                  <span className="ml-1 font-bold opacity-80">
+                    {Math.round(data.progress * 100)}%
+                  </span>
+                </span>
+                {/* Detailed SVG red sports car, wheels spinning continuously */}
+                <svg
+                  className="dashboard-car h-16 w-28 drop-shadow-lg"
+                  viewBox="0 0 140 70"
+                  aria-label={`Red sports car at ${Math.round(data.progress * 100)}% of plan`}
+                >
+                  <defs>
+                    <linearGradient id="carBody" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#f87171" />
+                      <stop offset="55%" stopColor="#dc2626" />
+                      <stop offset="100%" stopColor="#991b1b" />
+                    </linearGradient>
+                    <linearGradient id="carGlass" x1="0" y1="0" x2="0" y2="1">
+                      <stop offset="0%" stopColor="#e0f2fe" />
+                      <stop offset="100%" stopColor="#7dd3fc" />
+                    </linearGradient>
+                    <radialGradient id="exhaustGlow">
+                      <stop offset="0%" stopColor="rgba(251,146,60,0.95)" />
+                      <stop offset="100%" stopColor="rgba(251,146,60,0)" />
+                    </radialGradient>
+                  </defs>
+
+                  {/* Glowing exhaust flame */}
+                  <circle className="dashboard-exhaust" cx="6" cy="46" r="10" fill="url(#exhaustGlow)" />
+
+                  {/* Lower body */}
+                  <path
+                    d="M12 52 Q10 42 24 40 L38 38 Q52 24 70 24 Q92 24 104 38 L120 40 Q132 42 130 52 Q130 56 124 56 L18 56 Q12 56 12 52 Z"
+                    fill="url(#carBody)"
+                  />
+                  {/* Cabin / windshield */}
+                  <path
+                    d="M44 38 Q54 27 70 27 Q88 27 98 38 Z"
+                    fill="url(#carGlass)"
+                  />
+                  {/* Roof highlight */}
+                  <path d="M46 37 Q56 28 70 28 Q86 28 96 37" fill="none" stroke="#fecaca" strokeWidth="1.5" opacity="0.8" />
+                  {/* Side skirt + spoiler */}
+                  <rect x="12" y="50" width="120" height="3" rx="1.5" fill="#7f1d1d" />
+                  <path d="M118 36 L132 32 L132 38 L120 41 Z" fill="#b91c1c" />
+                  {/* Headlight */}
+                  <path d="M122 43 L130 45 L130 49 L122 48 Z" fill="#fef08a" />
+                  <path className="dashboard-headlight" d="M130 44 L138 42 L138 52 L130 50 Z" fill="rgba(254,240,138,0.5)" />
+                  {/* Racing stripe */}
+                  <rect x="58" y="25" width="6" height="12" rx="3" fill="#fef2f2" opacity="0.9" />
+
+                  {/* Rear wheel (spinning) */}
+                  <g className="dashboard-wheel" style={{ transformOrigin: '36px 54px' }}>
+                    <circle cx="36" cy="54" r="11" fill="#111827" />
+                    <circle cx="36" cy="54" r="5" fill="#9ca3af" />
+                    <rect x="34.8" y="45.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                    <rect x="34.8" y="54.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                  </g>
+                  {/* Front wheel (spinning) */}
+                  <g className="dashboard-wheel" style={{ transformOrigin: '106px 54px' }}>
+                    <circle cx="106" cy="54" r="11" fill="#111827" />
+                    <circle cx="106" cy="54" r="5" fill="#9ca3af" />
+                    <rect x="104.8" y="45.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                    <rect x="104.8" y="54.5" width="2.4" height="8" rx="1" fill="#e5e7eb" />
+                  </g>
+                </svg>
+              </div>
+            </div>
+          </section>
+
+          {/* Retro cricket scoreboard (replaces the hourly output table) */}
           <section className="mt-4 overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800">
             <div className="dashboard-scoreboard relative p-5">
               {/* Marquee strip */}
@@ -439,40 +578,6 @@ export default function LiveDashboard() {
                 </div>
               </div>
             ))}
-          </section>
-
-          {/* Hourly output */}
-          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <h2 className="text-sm font-bold text-slate-900">Hourly output breakdown</h2>
-            <p className="text-xs text-slate-400">
-              Valid accepted units per SLST shift hour (B/C-Grade, Return, Reworked, Lab Testing excluded)
-            </p>
-            <div className="mt-4 overflow-x-auto">
-              <table className="w-full min-w-[560px] text-left text-sm">
-                <thead>
-                  <tr className="border-y border-slate-100 bg-slate-50 text-xs uppercase tracking-wide text-slate-400">
-                    <th className="px-4 py-3 font-semibold">Hour</th>
-                    <th className="px-4 py-3 font-semibold">Time range</th>
-                    <th className="px-4 py-3 text-right font-semibold">Actual QTY</th>
-                  </tr>
-                </thead>
-                <tbody>
-                  {data.hourly.map((h) => (
-                    <tr key={h.label} className="border-b border-slate-50 last:border-0">
-                      <td className="px-4 py-2.5 font-semibold text-slate-700">{h.label}</td>
-                      <td className="px-4 py-2.5 text-slate-500">{h.range}</td>
-                      <td className="px-4 py-2.5 text-right font-bold text-slate-900">{h.qty}</td>
-                    </tr>
-                  ))}
-                  <tr className="bg-slate-50 text-sm font-bold">
-                    <td className="px-4 py-2.5" colSpan={2}>
-                      Total actual QTY
-                    </td>
-                    <td className="px-4 py-2.5 text-right text-indigo-600">{data.actualQty}</td>
-                  </tr>
-                </tbody>
-              </table>
-            </div>
           </section>
 
           {/* Weekly chart */}
