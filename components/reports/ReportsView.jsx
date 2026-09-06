@@ -3,6 +3,7 @@
 import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import PoSummaryView from '@/components/reports/PoSummaryView';
+import DailyOutputView from '@/components/reports/DailyOutputView';
 
 const TABS = [
   { id: 'po-summary', label: 'PO Summary' },
@@ -44,7 +45,7 @@ export default function ReportsView() {
 
       {/* Tab Content */}
       <div className="mt-6">{activeTab === 'po-summary' && <PoSummaryView />}</div>
-      <div className="mt-6">{activeTab === 'daily-output' && <DailyOutputPlaceholder />}</div>
+      <div className="mt-6">{activeTab === 'daily-output' && <DailyOutputView />}</div>
       <div className="mt-6">{activeTab === 'department-output' && <DepartmentOutputPlaceholder />}</div>
     </div>
   );
@@ -89,24 +90,6 @@ function PoSummaryPlaceholder() {
         <PlaceholderCard title="PO Overview" description="High-level status of all purchase orders." badges={['Table']} />
         <PlaceholderCard title="PO Progress" description="Quantity completed vs. ordered per PO." badges={['Progress bars']} />
         <PlaceholderCard title="PO Status Breakdown" description="Open, in-progress, and closed PO counts." badges={['Chart']} />
-      </div>
-    </section>
-  );
-}
-
-function DailyOutputPlaceholder() {
-  return (
-    <section aria-labelledby="daily-output-heading">
-      <h3 id="daily-output-heading" className="text-lg font-semibold text-slate-900">
-        Daily Output Report
-      </h3>
-      <p className="mt-1 text-sm text-slate-600">
-        Daily production output across all lines and departments.
-      </p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <PlaceholderCard title="Today's Output" description="Units produced today by line and shift." badges={['Table']} />
-        <PlaceholderCard title="Output Trend" description="Daily output over the selected date range." badges={['Line chart']} />
-        <PlaceholderCard title="Target vs. Actual" description="Daily targets compared against actual output." badges={['Chart']} />
       </div>
     </section>
   );

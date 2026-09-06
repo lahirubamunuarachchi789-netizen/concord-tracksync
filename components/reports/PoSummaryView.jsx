@@ -8,8 +8,7 @@ import { SpinnerIcon, DownloadIcon } from '@/components/icons';
 import {
   buildPoSummary,
   fetchPoRawQrData,
-  buildQrDataCsv,
-  buildQrDataFileName,
+  buildQrDataXLSX,
   CUT_ROW_LABEL,
   TOTAL_KEY,
   STANDARD_SIZES,
@@ -68,9 +67,8 @@ export default function PoSummaryView() {
     setExportError(null);
     try {
       const rows = await fetchPoRawQrData(po);
-      const csv = buildQrDataCsv(rows, po);
-      const fileName = buildQrDataFileName(po);
-      downloadCsv(fileName, csv);
+      const { buffer, fileName } = await buildQrDataXLSX(rows, po);
+      downloadXlsx(fileName, buffer);
     } catch (err) {
       setExportError(err?.message || 'Failed to export QR data.');
     } finally {
@@ -167,9 +165,11 @@ export default function PoSummaryView() {
 
 
 /* ----------------------- matrix rendering --------------------------- */
-/** Trigger a browser download for the generated CSV file. */
-function downloadCsv(fileName, csv) {
-  const blob = new Blob([`\uFEFF${csv}`], { type: 'text/csv;charset=utf-8;' });
+/** Trigger a browser download for the generated .xlsx workbook. */
+function downloadXlsx(fileName, buffer) {
+  const blob = new Blob([buffer], {
+    type: 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet',
+  });
   const url = URL.createObjectURL(blob);
   const link = document.createElement('a');
   link.href = url;

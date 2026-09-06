@@ -1,5 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
+import { inflateRawSync } from 'node:zlib';
 import {
   emptyMetrics,
   aggregateMetricsByDepartmentSize,
@@ -8,13 +9,24 @@ import {
   STANDARD_SIZES,
   SLST_TIME_ZONE,
   QR_DATA_CSV_HEADERS,
+  QR_DATA_XLSX_SHEET_NAME,
+  QR_DATA_XLSX_COL_WIDTHS,
   formatSlstTimestamp,
   formatSlstDate,
   escapeCsvCell,
   transformQrRowForExport,
   buildQrDataCsv,
+  buildQrDataXLSX,
   buildQrDataFileName,
   createPoQrDataFetcher,
+    // Daily Output Report.
+  aggregateDailyOutput,
+  buildDailyOutputXlsx,
+  createDailyOutputFetcher,
+  DAILY_OUTPUT_COLUMNS,
+  DAILY_OUTPUT_DEPARTMENT_COLUMN,
+  QC_DEFECT_CATEGORIES,
+  slstDayUtcBounds,
 } from '../lib/reportsService.js';
 
 test('emptyMetrics returns a zeroed metrics bucket', () => {
@@ -90,7 +102,6 @@ test('outTotal includes IN rows in the net sum', () => {
   assert.equal(result['D1']['35'].outTotal, 8); // 5 + 3
 });
 
-
 test('ignores rows for other POs', () => {
   const rows = [
     { qr_code: ';mqc1;PO-999;35;scan;', department: 'D1', record_status: 'OUT', qc_status: 'Forward', count: 1 },
@@ -145,7 +156,6 @@ test('aggregates QC categories correctly', () => {
   assert.equal(m.out, 1); // only Forward
   assert.equal(m.outTotal, 5); // sum of all count values
 });
-
 
 /* ==================================================================
  * sumMetricsAcrossSizes — the Total column
@@ -211,7 +221,6 @@ test('balanceToCut is zero when output equals cut', () => {
   const bal = cutQty['35'] - sizeMetrics['35'].outTotal;
   assert.equal(bal, 0);
 });
-
 
 /* ==================================================================
  * buildPoSummary — fixed size range and full matrix assembly
@@ -461,10 +470,114 @@ test('buildQrDataCsv with no rows returns just the header row', () => {
   assert.equal(buildQrDataCsv([], 'PO-123'), QR_DATA_CSV_HEADERS.join(','));
 });
 
-test('buildQrDataFileName produces PO_{po}_QR_Data_{YYYY-MM-DD}.csv', () => {
+test('buildQrDataFileName defaults to .xlsx and accepts a custom extension', () => {
   const name = buildQrDataFileName('144065');
-  assert.match(name, /^PO_144065_QR_Data_\d{4}-\d{2}-\d{2}\.csv$/);
+  assert.match(name, /^PO_144065_QR_Data_\d{4}-\d{2}-\d{2}\.xlsx$/);
+  assert.match(buildQrDataFileName('144065', 'csv'), /\.csv$/);
 });
+
+/* ==================================================================
+ * buildQrDataXLSX — native .xlsx buffer/binary payload
+ * ================================================================== */
+
+test('buildQrDataXLSX produces a valid xlsx binary payload', async () => {
+  const rows = [
+    {
+      qr_code: ';mqc1;PO-123;38;scan;',
+      inner_qr: 'INNER-BOX-1',
+      department: 'Lasting 01',
+      record_status: 'OUT',
+      qc_status: 'Forward',
+      count: 3,
+      created_at: '2026-09-04T03:58:17.631Z',
+    },
+    {
+      qr_code: ';mqc1;PO-123;35;scan;',
+      inner_qr: null,
+      department: 'Cutting',
+      record_status: 'IN',
+      qc_status: 'B Grade',
+      count: 1,
+      created_at: '2026-09-04T04:01:00.000Z',
+    },
+  ];
+  const { buffer, fileName } = await buildQrDataXLSX(rows, 'PO-123');
+  // ZIP magic "PK" proves it is a real xlsx container
+  assert.ok(Buffer.isBuffer(buffer));
+  assert.equal(buffer.length > 0, true);
+  assert.equal(buffer[0], 0x50); // 'P'
+  assert.equal(buffer[1], 0x4b); // 'K'
+  assert.match(fileName, /^PO_PO-123_QR_Data_\d{4}-\d{2}-\d{2}\.xlsx$/);
+});
+
+test('buildQrDataXLSX parses back to SLST timestamps and numeric Count cells', async () => {
+  const XLSX = await import('xlsx');
+  const rows = [
+    {
+      qr_code: ';mqc1;PO-123;38;scan;',
+      inner_qr: 'INNER-BOX-1',
+      department: 'Lasting 01',
+      record_status: 'OUT',
+      qc_status: 'Forward',
+      count: 3,
+      created_at: '2026-09-04T03:58:17.631Z',
+    },
+  ];
+  const { buffer } = await buildQrDataXLSX(rows, 'PO-123');
+
+  const workbook = XLSX.read(buffer, { type: 'buffer' });
+  assert.equal(workbook.SheetNames[0], QR_DATA_XLSX_SHEET_NAME);
+  const sheet = workbook.Sheets[QR_DATA_XLSX_SHEET_NAME];
+  const aoa = XLSX.utils.sheet_to_json(sheet, { header: 1 });
+
+  // Header row uses the exact export columns
+  assert.deepEqual(aoa[0], QR_DATA_CSV_HEADERS);
+  // Data row: SLST timestamp, PO, parsed size, QR codes, statuses
+  assert.equal(aoa[1][0], '2026-09-04 09:28:17'); // SLST
+  assert.equal(aoa[1][1], 'PO-123');
+  assert.equal(aoa[1][2], '38');
+  assert.equal(aoa[1][3], ';mqc1;PO-123;38;scan;');
+  assert.equal(aoa[1][4], 'INNER-BOX-1');
+  assert.equal(aoa[1][5], 'Lasting 01');
+  assert.equal(aoa[1][6], 'OUT');
+  assert.equal(aoa[1][7], 'Forward');
+  // Count must be a NUMERIC integer cell, not a string
+  assert.equal(aoa[1][8], 3);
+  assert.equal(typeof aoa[1][8], 'number');
+  assert.equal(Number.isInteger(aoa[1][8]), true);
+});
+
+test('buildQrDataXLSX writes the 10-column width set into the worksheet XML', async () => {
+  const { buffer } = await buildQrDataXLSX(
+    [{ qr_code: ';mqc1;PO-123;38;scan;', count: 1, created_at: '2026-09-04T03:58:17.631Z' }],
+    'PO-123'
+  );
+  assert.equal(QR_DATA_XLSX_COL_WIDTHS.length, 10);
+  const xml = extractZipEntry(buffer, 'xl/worksheets/sheet1.xml');
+  assert.ok(xml, 'sheet1.xml entry should exist in the xlsx payload');
+  assert.match(xml, /<cols>/);
+  const colTags = xml.match(/<col /g) || [];
+  assert.equal(colTags.length, 10); // one width entry per exported column
+});
+
+/** Extract and inflate a single entry from the xlsx (zip) payload. */
+function extractZipEntry(buffer, targetName) {
+  let offset = 0;
+  while (offset + 30 <= buffer.length && buffer.readUInt32LE(offset) === 0x04034b50) {
+    const method = buffer.readUInt16LE(offset + 8);
+    const compSize = buffer.readUInt32LE(offset + 18);
+    const nameLen = buffer.readUInt16LE(offset + 26);
+    const extraLen = buffer.readUInt16LE(offset + 28);
+    const name = buffer.toString('utf8', offset + 30, offset + 30 + nameLen);
+    const dataStart = offset + 30 + nameLen + extraLen;
+    if (name === targetName) {
+      const chunk = buffer.subarray(dataStart, dataStart + compSize);
+      return method === 8 ? inflateRawSync(chunk).toString('utf8') : chunk.toString('utf8');
+    }
+    offset = dataStart + compSize;
+  }
+  return null;
+}
 /* ==================================================================
  * fetchPoRawQrData — mock supabase client query shape
  * ================================================================== */
@@ -530,4 +643,216 @@ test('fetchPoRawQrData returns [] for blank PO and for unreachable table', async
     }).client
   );
   assert.deepEqual(await failing('PO-123'), []);
+});
+
+/* ==================================================================
+ * Daily Output Report — SLST date query, filters, matrix, Excel export
+ * ================================================================== */
+
+// Extended mock supabase-js client capturing gte/lt/not in addition to
+// select/order/eq (mirrors the chainable-thenable builder above).
+function createDailyOutputMockSupabase(tables = {}) {
+  const queries = [];
+  const makeBuilder = (tableName) => {
+    const record = { table: tableName, select: null, filters: [], orders: [], limit: null };
+    queries.push(record);
+    const chain = {
+      select(columns) { record.select = columns; return chain; },
+      eq(column, value) { record.filters.push(['eq', column, value]); return chain; },
+      neq(column, value) { record.filters.push(['neq', column, value]); return chain; },
+      gte(column, value) { record.filters.push(['gte', column, value]); return chain; },
+      lt(column, value) { record.filters.push(['lt', column, value]); return chain; },
+      not(column, operator, value) { record.filters.push(['not', column, operator, value]); return chain; },
+      order(column, opts) { record.orders.push([column, opts]); return chain; },
+      then(onFulfilled, onRejected) {
+        const payload = tables[tableName] ?? { data: [], error: null };
+        return Promise.resolve(payload).then(onFulfilled, onRejected);
+      },
+    };
+    return chain;
+  };
+  return { client: { from: makeBuilder }, queries };
+}
+
+// Sample rows for 2026-09-04 SLST. SLST = UTC+5:30, so SLST midnight 2026-09-04
+// == UTC 2026-09-03 18:30:00.
+const dailyRows = [
+  { qr_code: ';mqc1;PO-A;35;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'Forward', count: 1, created_at: '2026-09-04 00:30:00+00' },
+  { qr_code: ';mqc1;PO-A;35;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'Forward', count: 1, created_at: '2026-09-04 00:45:00+00' },
+  { qr_code: ';mqc1;PO-A;36;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'Forward', count: 1, created_at: '2026-09-04 01:00:00+00' },
+  { qr_code: ';mqc1;PO-A;37;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'Forward', count: 1, created_at: '2026-09-04 18:29:59+00' },
+  { qr_code: ';mqc1;PO-A;35;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'Forward', count: 1, created_at: '2026-09-04 18:30:00+00' },
+  { qr_code: ';mqc1;PO-A;35;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'B Grade', count: 1, created_at: '2026-09-04 02:00:00+00' },
+];
+
+// Pre-filtered subset (Standard QC + within the daily window) that the pure
+// aggregateDailyOutput aggregator expects to receive.
+const filteredDailyRows = dailyRows.filter(
+  (r) => r.qc_status === 'Forward' && r.created_at < '2026-09-04 18:30:00+00'
+);
+test('slstDayUtcBounds maps a SLST date to the exact UTC day window', () => {
+  const { start, end } = slstDayUtcBounds('2026-09-04');
+  // SLST midnight 2026-09-04 == UTC 2026-09-03 18:30 (UTC+5:30, no DST).
+  assert.equal(start, '2026-09-03T18:30:00.000Z');
+  assert.equal(end, '2026-09-04T18:30:00.000Z');
+});
+
+test('slstDayUtcBounds throws on an invalid date', () => {
+  assert.throws(() => slstDayUtcBounds('not-a-date'), /Invalid SLST date/);
+  assert.throws(() => slstDayUtcBounds('2026-13-40'), /Invalid SLST date/);
+});
+
+test('Daily Output query applies the SLST date window + department/record/qc filters', async () => {
+  const { client, queries } = createDailyOutputMockSupabase({
+    data_updates: { data: dailyRows, error: null },
+  });
+  const fetchRows = createDailyOutputFetcher(client);
+  await fetchRows({
+    date: '2026-09-04',
+    departmentId: 'Lasting 01',
+    recordStatus: 'IN',
+    qcStatus: 'Standard',
+    cumulative: false,
+  });
+
+  assert.equal(queries.length, 1);
+  const q = queries[0];
+  assert.equal(q.table, 'data_updates');
+  assert.equal(q.select, DAILY_OUTPUT_COLUMNS);
+  const codes = q.filters.map((f) => f[0] + ':' + f[1]);
+  // SLST day window: daily uses both gte(start) and lt(end).
+  assert.ok(codes.includes('gte:created_at'), 'must filter gte created_at (SLST start)');
+  assert.ok(codes.includes('lt:created_at'), 'must filter lt created_at (SLST end)');
+  assert.equal(q.filters.find((f) => f[0] === 'eq' && f[1] === DAILY_OUTPUT_DEPARTMENT_COLUMN)?.[2], 'Lasting 01');
+  assert.equal(q.filters.find((f) => f[0] === 'eq' && f[1] === 'record_status')?.[2], 'IN');
+  // 'Standard' is translated to a NOT-IN of the defect categories.
+  const notFilter = q.filters.find((f) => f[0] === 'not' && f[1] === 'qc_status');
+  assert.ok(notFilter, 'Standard qcStatus must become a NOT-in filter');
+  assert.deepEqual(notFilter[3], QC_DEFECT_CATEGORIES);
+});
+
+test('Daily Output query translates an explicit qcStatus (B Grade) via eq', async () => {
+  const { client, queries } = createDailyOutputMockSupabase({ data_updates: { data: [], error: null } });
+  const fetchRows = createDailyOutputFetcher(client);
+  await fetchRows({ date: '2026-09-04', qcStatus: 'B Grade' });
+  const qcEq = queries[0].filters.find((f) => f[0] === 'eq' && f[1] === 'qc_status');
+  assert.equal(qcEq?.[2], 'B Grade');
+});
+
+test('Daily Output query applies record_status OUT and the cumulative (no gte) window', async () => {
+  const { client, queries } = createDailyOutputMockSupabase({ data_updates: { data: [], error: null } });
+  const fetchRows = createDailyOutputFetcher(client);
+  await fetchRows({ date: '2026-09-04', recordStatus: 'OUT', cumulative: true });
+  const q = queries[0];
+  const codes = q.filters.map((f) => f[0] + ':' + f[1]);
+  // Cumulative: only lt(end), NO gte(start).
+  assert.ok(codes.includes('lt:created_at'));
+  assert.ok(!codes.includes('gte:created_at'), 'cumulative must not bound the start');
+  assert.equal(q.filters.find((f) => f[0] === 'eq' && f[1] === 'record_status')?.[2], 'OUT');
+});
+
+test('aggregateDailyOutput builds the 35-50 matrix with daily + cumulative totals', () => {
+  // Daily: size 35 -> 2 (2 Forward scans), 36 -> 1, 37 -> 1.
+  // (aggregateDailyOutput receives already-filtered rows, so the out-of-window
+  //  18:30 UTC row and the B-Grade row are not counted when the caller filtered.)
+  const result = aggregateDailyOutput(filteredDailyRows, []);
+  console.error('DIAG filteredDailyRows.length=', filteredDailyRows.length, 'rows.length=', result.rows.length, 'dailyTotal=', result.rows[0]?.dailyTotal);
+
+  assert.equal(result.sizes.length, 16);
+  assert.equal(result.sizes[0], '35');
+  assert.equal(result.sizes[15], '50');
+  assert.equal(result.rows.length, 1);
+
+  const row = result.rows[0];
+  assert.equal(row.po, 'PO-A');
+  assert.equal(row.sizes['35'], 2);
+  assert.equal(row.sizes['36'], 1);
+  assert.equal(row.sizes['37'], 1);
+  assert.equal(row.sizes['38'], 0);
+  // Daily total = 2 + 1 + 1 = 4 (all dailyRows land on the SLST day).
+  assert.equal(row.dailyTotal, 4);
+  // Cumulative only reflects cumulativeRows (empty here) -> 0.
+  assert.equal(row.cumulativeOutput, 0);
+
+  // Summary footer = column sums + grand totals.
+  assert.equal(result.summary.sizes['35'], 2);
+  assert.equal(result.summary.sizes['37'], 1);
+  assert.equal(result.summary.dailyTotal, 4);
+  assert.equal(result.summary.cumulativeOutput, 0);
+});
+
+test('aggregateDailyOutput sums prior-day rows into the cumulative column', () => {
+  const cumulativeRows = [
+    { qr_code: ';mqc1;PO-A;35;scan;', count: 5, created_at: '2026-09-03 20:00:00+00' },
+  ];
+  const result = aggregateDailyOutput(filteredDailyRows, cumulativeRows);
+  const row = result.rows[0];
+  // Daily unchanged.
+  assert.equal(row.dailyTotal, 4);
+  // Cumulative only reflects the prior-day cumulativeRows (5 on size 35) -> 5.
+  assert.equal(row.cumulativeOutput, 5);
+  assert.equal(result.summary.cumulativeOutput, 5);
+});
+
+test('aggregateDailyOutput ignores rows outside the 35-50 size range and unparseable POs', () => {
+  const rows = [
+    { qr_code: ';mqc1;PO-B;28;scan;', count: 3 }, // size < 35 -> ignored
+    { qr_code: ';mqc1;PO-B;51;scan;', count: 3 }, // size > 50 -> ignored
+    { qr_code: ';mqc1;PO-B;42;scan;', count: 2 }, // valid
+    { qr_code: 'nope-', count: 9 }, // no PO -> ignored
+  ];
+  const result = aggregateDailyOutput(rows, []);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].po, 'PO-B');
+  assert.equal(result.rows[0].sizes['42'], 2);
+  assert.equal(result.rows[0].dailyTotal, 2);
+  assert.equal(result.summary.dailyTotal, 2);
+});
+
+test('buildDailyOutputXlsx produces a valid .xlsx buffer with the matrix layout', async () => {
+  const matrix = {
+    sizes: STANDARD_SIZES,
+    rows: [
+      {
+        po: 'PO-A',
+        sizes: { '35': 2, '36': 1, '37': 0, '38': 3 },
+        dailyTotal: 6,
+        cumulativeOutput: 10,
+      },
+    ],
+    summary: {
+      sizes: { '35': 2, '36': 1, '37': 0, '38': 3 },
+      dailyTotal: 6,
+      cumulativeOutput: 10,
+    },
+  };
+
+  const { buffer, fileName } = await buildDailyOutputXlsx(matrix, {
+    departmentId: 'Lasting 01',
+    date: '2026-09-04',
+    recordStatus: 'IN',
+    qcStatus: 'ALL',
+  });
+
+  // File name reflects the active date filter.
+  assert.equal(fileName, 'Daily_Output_Report_2026-09-04.xlsx');
+
+  // The buffer is a Buffer whose first two bytes are the ZIP magic 'PK'.
+  assert.ok(Buffer.isBuffer(buffer), 'XLSX buffer should be a Buffer');
+  assert.equal(buffer[0], 0x50); // 'P'
+  assert.equal(buffer[1], 0x4b); // 'K'
+
+  // SheetJS emits inline strings in the worksheet (no sharedStrings.xml),
+  // so the banner + data strings all live in xl/worksheets/sheet1.xml.
+  const sheet = extractZipEntry(buffer, 'xl/worksheets/sheet1.xml');
+  assert.ok(sheet, 'expected xl/worksheets/sheet1.xml');
+  assert.ok(sheet.includes('DAILY OUTPUT REPORT'));
+  assert.ok(sheet.includes('Lasting 01'));
+  assert.ok(sheet.includes('PO Number'));
+  assert.ok(sheet.includes('Daily Total'));
+  assert.ok(sheet.includes('Cumulative Output'));
+  assert.ok(sheet.includes('35'));
+  assert.ok(sheet.includes('50'));
+  assert.ok(sheet.includes('PO-A'));
+  assert.ok(sheet.includes('TOTAL'));
 });
