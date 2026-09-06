@@ -42,3 +42,83 @@ input:-webkit-autofill:focus {
 .tracksync-qr-video [id*='__qr_reader'] {
   border: none !important;
 }
+
+/* ------------------------------------------------------------
+   Live Dashboard - Factory TV / full-screen mode
+   body.tv-mode is toggled by LiveDashboard. It hides the app
+   chrome (sidebar, header, footer), removes the sidebar offset
+   and lets the dashboard stretch edge-to-edge on factory TVs.
+   ------------------------------------------------------------ */
+body.tv-mode aside,
+body.tv-mode header,
+body.tv-mode footer {
+  display: none !important;
+}
+
+body.tv-mode .app-shell-column {
+  margin-left: 0 !important;
+}
+
+body.tv-mode .app-shell-main {
+  padding: 0 !important;
+}
+
+/* ------------------------------------------------------------
+   Live Dashboard - horse race animation
+   The rider bobs while "galloping"; the flag waves at the line.
+   ------------------------------------------------------------ */
+@keyframes horse-gallop {
+  0%,
+  100% {
+    transform: translateY(0) rotate(0deg);
+  }
+  25% {
+    transform: translateY(-5px) rotate(-1.5deg);
+  }
+  50% {
+    transform: translateY(0) rotate(0deg);
+  }
+  75% {
+    transform: translateY(-3px) rotate(1.5deg);
+  }
+}
+
+.dashboard-horse {
+  animation: horse-gallop 0.55s ease-in-out infinite;
+  will-change: transform;
+}
+
+@keyframes flag-wave {
+  0%,
+  100% {
+    transform: skewY(0deg) scaleX(1);
+  }
+  50% {
+    transform: skewY(-6deg) scaleX(0.94);
+  }
+}
+
+.dashboard-flag {
+  animation: flag-wave 0.9s ease-in-out infinite;
+  transform-origin: left center;
+}
+
+@keyframes track-dash-move {
+  from {
+    background-position-x: 0;
+  }
+  to {
+    background-position-x: -48px;
+  }
+}
+
+.dashboard-track {
+  background-image: repeating-linear-gradient(
+    90deg,
+    rgb(148 163 184) 0px,
+    rgb(148 163 184) 24px,
+    transparent 24px,
+    transparent 48px
+  );
+  animation: track-dash-move 1.2s linear infinite;
+}

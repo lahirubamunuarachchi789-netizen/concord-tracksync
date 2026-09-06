@@ -91,7 +91,7 @@ export default function AppShell({ children }) {
           onCloseMobile={() => setMobileOpen(false)}
         />
         <div
-          className={`flex min-h-screen flex-col transition-all duration-300 ${
+          className={`app-shell-column flex min-h-screen flex-col transition-all duration-300 ${
             collapsed ? 'lg:ml-20' : 'lg:ml-72'
           }`}
         >
@@ -102,7 +102,7 @@ export default function AppShell({ children }) {
             onOpenMobile={() => setMobileOpen(true)}
             onLogout={handleLogout}
           />
-          <main className="flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
+          <main className="app-shell-main flex-1 px-4 py-6 sm:px-6 lg:px-8">{children}</main>
           <footer className="px-4 pb-6 text-center text-xs text-slate-400 sm:px-6 lg:px-8">
             Concord TrackSync · Production Tracking System · © {new Date().getFullYear()} Concord
             Footwear (Pvt) Ltd
