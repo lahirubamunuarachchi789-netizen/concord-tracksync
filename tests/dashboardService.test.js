@@ -178,3 +178,78 @@ test('normalizeDashRow coerces dash row types', () => {
   assert.equal(row.available_man_power, 12);
   assert.deepEqual(normalizeDashRow(null).department, '');
 });
+
+// ---------------- Rotation department selection ----------------
+
+const {
+  ROTATION_DEPTS_STORAGE_KEY,
+  filterRotationDepartments,
+  loadRotationDepartments,
+  saveRotationDepartments,
+} = await import('../lib/dashboardService.js');
+
+/** Minimal localStorage stub. */
+function makeStorage(initial = {}) {
+  const map = new Map(Object.entries(initial));
+  return {
+    getItem: (k) => (map.has(k) ? map.get(k) : null),
+    setItem: (k, v) => map.set(k, String(v)),
+    removeItem: (k) => map.delete(k),
+  };
+}
+
+test('filterRotationDepartments falls back to all when selection is empty', () => {
+  const available = ['Desma', 'Lasting 01', 'Cutting'];
+  assert.deepEqual(filterRotationDepartments(available, []), available);
+  assert.deepEqual(filterRotationDepartments(available, undefined), available);
+  assert.deepEqual(filterRotationDepartments(available, null), available);
+  assert.deepEqual(filterRotationDepartments(available, 'not-an-array'), available);
+  assert.deepEqual(filterRotationDepartments(available), available);
+  assert.deepEqual(filterRotationDepartments([], []), []);
+});
+
+test('filterRotationDepartments keeps only selected departments in order', () => {
+  const available = ['Desma', 'Lasting 01', 'Cutting'];
+  assert.deepEqual(filterRotationDepartments(available, ['Cutting', 'Desma']), [
+    'Desma',
+    'Cutting',
+  ]);
+});
+
+test('filterRotationDepartments falls back to all when none of the selection exist', () => {
+  const available = ['Desma', 'Lasting 01'];
+  assert.deepEqual(filterRotationDepartments(available, ['Ghost Dept']), available);
+});
+
+test('saveRotationDepartments persists and loadRotationDepartments restores', () => {
+  const storage = makeStorage();
+  assert.equal(saveRotationDepartments(['Desma', 'Lasting 01'], storage), true);
+  assert.deepEqual(loadRotationDepartments(storage), ['Desma', 'Lasting 01']);
+
+  // Empty list clears the stored preference entirely.
+  assert.equal(saveRotationDepartments([], storage), true);
+  assert.equal(storage.getItem(ROTATION_DEPTS_STORAGE_KEY), null);
+  assert.deepEqual(loadRotationDepartments(storage), []);
+});
+
+test('loadRotationDepartments tolerates corrupt or invalid stored data', () => {
+  const corrupt = makeStorage();
+  corrupt.setItem(ROTATION_DEPTS_STORAGE_KEY, '{not json');
+  assert.deepEqual(loadRotationDepartments(corrupt), []);
+
+  const wrongType = makeStorage();
+  wrongType.setItem(ROTATION_DEPTS_STORAGE_KEY, JSON.stringify('nope'));
+  assert.deepEqual(loadRotationDepartments(wrongType), []);
+
+  const withGarbage = makeStorage();
+  withGarbage.setItem(
+    ROTATION_DEPTS_STORAGE_KEY,
+    JSON.stringify(['Desma', 42, null, ' ', 'Cutting'])
+  );
+  assert.deepEqual(loadRotationDepartments(withGarbage), ['Desma', 'Cutting']);
+});
+
+test('loadRotationDepartments is safe server-side (no window)', () => {
+  assert.deepEqual(loadRotationDepartments(null), []);
+  assert.equal(saveRotationDepartments(['Desma'], null), true);
+});

@@ -28,6 +28,9 @@ import {
   ROTATION_INTERVAL_MS,
   DASH_SHIFTS,
   shiftMinutes,
+  filterRotationDepartments,
+  loadRotationDepartments,
+  saveRotationDepartments,
 } from '@/lib/dashboardService';
 import { formatSlstDate, formatSlstTimestamp } from '@/lib/reportsService';
 
@@ -112,7 +115,14 @@ export default function LiveDashboard() {
   const [isTv, setIsTv] = useState(false);
   const [rotationIndex, setRotationIndex] = useState(0);
   const [showAllShifts, setShowAllShifts] = useState(false);
+  const [selectedDepartments, setSelectedDepartments] = useState([]);
+  const [showDeptSettings, setShowDeptSettings] = useState(false);
   const dateTouched = useRef(false);
+
+  // Restore the persisted department selection (TV displays remember it).
+  useEffect(() => {
+    setSelectedDepartments(loadRotationDepartments());
+  }, []);
 
   // Default date = today (SLST); auto-rotation only runs in this unfiltered state.
   useEffect(() => {
@@ -146,11 +156,17 @@ export default function LiveDashboard() {
     [date]
   );
 
-  // Resolve which department is on display: explicit filter or the rotation slot.
+  // Resolve which department is on display: explicit filter or the rotation slot
+  // over the user's selected subset (falls back to all when nothing selected).
+  const rotationDepartments = useMemo(
+    () => filterRotationDepartments(departments, selectedDepartments),
+    [departments, selectedDepartments]
+  );
+
   const activeDepartment =
     departmentId ||
-    (departments.length > 0
-      ? departments[rotationIndex % departments.length]
+    (rotationDepartments.length > 0
+      ? rotationDepartments[rotationIndex % rotationDepartments.length]
       : '');
 
   // (Re)load whenever the active department or date changes.
@@ -158,15 +174,21 @@ export default function LiveDashboard() {
     if (activeDepartment) loadDashboard(activeDepartment);
   }, [activeDepartment, loadDashboard]);
 
-  // Auto-rotation: advance the slot every 15s only in the unfiltered state.
+  // Auto-rotation: advance the slot every 15s only in the unfiltered state,
+  // cycling through the user's selected departments.
   useEffect(() => {
-    if (!isAutoRotation || departments.length < 2) return undefined;
+    if (!isAutoRotation || rotationDepartments.length < 2) return undefined;
     const timer = setInterval(
       () => setRotationIndex((i) => i + 1),
       ROTATION_INTERVAL_MS
     );
     return () => clearInterval(timer);
-  }, [isAutoRotation, departments.length]);
+  }, [isAutoRotation, rotationDepartments.length]);
+
+  // Keep the rotation slot valid when the selection shrinks.
+  useEffect(() => {
+    setRotationIndex(0);
+  }, [selectedDepartments]);
 
   // Live refresh while visible (factory TVs stay on all day).
   useEffect(() => {
@@ -223,6 +245,21 @@ export default function LiveDashboard() {
     setRotationIndex(0);
   };
 
+  const toggleSelectedDepartment = (dept) => {
+    setSelectedDepartments((prev) => {
+      const next = prev.includes(dept)
+        ? prev.filter((d) => d !== dept)
+        : [...prev, dept];
+      saveRotationDepartments(next);
+      return next;
+    });
+  };
+
+  const handleSelectAllDepartments = () => {
+    setSelectedDepartments([]);
+    saveRotationDepartments([]);
+  };
+
   // Current SLST clock time (updates every 30s alongside live refresh).
   const [slstNow, setSlstNow] = useState(() => formatSlstTimestamp(new Date()).slice(11, 16));
   useEffect(() => {
@@ -273,6 +310,19 @@ export default function LiveDashboard() {
           />
           <button
             type="button"
+            onClick={() => setShowDeptSettings((v) => !v)}
+            className="inline-flex items-center gap-2 rounded-xl bg-white px-3 py-2 text-sm font-semibold text-slate-600 shadow-sm ring-1 ring-slate-200 transition hover:bg-slate-50"
+            aria-expanded={showDeptSettings}
+          >
+            ⚙ Select Departments
+            {selectedDepartments.length > 0 ? (
+              <span className="rounded-full bg-indigo-600 px-1.5 py-0.5 text-[10px] font-bold text-white">
+                {selectedDepartments.length}
+              </span>
+            ) : null}
+          </button>
+          <button
+            type="button"
             onClick={toggleFullScreen}
             className="inline-flex items-center gap-2 rounded-xl bg-indigo-600 px-4 py-2 text-sm font-semibold text-white shadow-sm transition hover:bg-indigo-500"
           >
@@ -281,6 +331,52 @@ export default function LiveDashboard() {
           </button>
         </div>
       </div>
+
+      {/* Department selection dropdown */}
+      {showDeptSettings ? (
+        <div className="mt-3 rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <p className="text-xs font-semibold text-slate-500">
+              Choose which departments join the auto-rotation loop. Leave all unchecked to rotate
+              through every department planned for the day.
+            </p>
+            <button
+              type="button"
+              onClick={handleSelectAllDepartments}
+              className="rounded-lg bg-slate-100 px-3 py-1.5 text-xs font-semibold text-slate-600 hover:bg-slate-200"
+            >
+              Reset to all
+            </button>
+          </div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {departments.length === 0 ? (
+              <p className="text-xs text-slate-400">No departments planned for this date.</p>
+            ) : (
+              departments.map((dept) => {
+                const checked = selectedDepartments.includes(dept);
+                return (
+                  <label
+                    key={dept}
+                    className={`inline-flex cursor-pointer items-center gap-2 rounded-xl border px-3 py-2 text-sm font-medium transition ${
+                      checked
+                        ? 'border-indigo-300 bg-indigo-50 text-indigo-700'
+                        : 'border-slate-200 bg-white text-slate-600 hover:bg-slate-50'
+                    }`}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={checked}
+                      onChange={() => toggleSelectedDepartment(dept)}
+                      className="h-4 w-4 rounded border-slate-300 text-indigo-600 focus:ring-indigo-500"
+                    />
+                    {dept}
+                  </label>
+                );
+              })
+            )}
+          </div>
+        </div>
+      ) : null}
 
       {error ? (
         <div className="mt-4 flex items-center gap-2 rounded-xl bg-red-50 p-4 text-sm font-medium text-red-600 ring-1 ring-red-100">
