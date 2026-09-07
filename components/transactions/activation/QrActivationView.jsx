@@ -298,8 +298,9 @@ export default function QrActivationView() {
   /**
       * Validates one submit before anything is written, in this order:
    *   0. msk lifecycle status gate (enforced by createActivation):
-   *      the scanned QR's msk row MUST be in the 'Packed' status -
-   *      'Active' or any other status blocks the activation.
+   *      when the scanned QR EXISTS in msk its row MUST be in the
+   *      'Packed' status - 'Active' or any other status blocks the
+   *      activation. A QR with NO msk row at all is allowed through.
    *   1. Dual-Scan Inner Box checks (V1 URL token, V2 PO match, V3
    *      srl_num size match) when an Inner Box QR was captured - a
    *      mismatched pair must never reach any other check or write.

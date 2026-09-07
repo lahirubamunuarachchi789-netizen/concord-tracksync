@@ -670,7 +670,11 @@ test('status gate: any other non-Packed status is blocked naming the current sta
   });
 });
 
-test('status gate: a missing msk row (no status) blocks as not found', () => {
+test('status gate: a blank/unknown status value blocks defensively (a missing msk ROW is allowed by the service)', () => {
+  // The pure gate only sees a status VALUE: a blank/unknown value is
+  // never provably 'Packed', so it blocks. A QR with NO msk row at all
+  // never reaches this function - checkActivationMskStatus allows it
+  // through at the service level.
   for (const missing of [null, undefined, '   ']) {
     assert.deepEqual(evaluateActivationStatus(missing), {
       reason: BLOCK_NOT_PACKED.replace('{status}', 'not found'),
@@ -709,7 +713,7 @@ test('status lookup: an unreachable msk table reports offline (fail-safe)', asyn
   assert.deepEqual(result, { found: false, status: null, offline: true });
 });
 
-test('status validation: Packed passes, Active/missing/unreachable are blocked', async () => {
+test('status validation: Packed + missing row pass, Active/unreachable are blocked', async () => {
   // 'Packed' -> allowed (null).
   const packed = createMockSupabase({
     msk: { data: [{ status: 'Packed' }], error: null },
@@ -726,12 +730,11 @@ test('status validation: Packed passes, Active/missing/unreachable are blocked',
     status: 'Active',
   });
 
-  // No msk row -> blocked as 'not found'.
+  // No msk row -> ALLOWED (the gate only restricts existing rows).
   const missing = createMockSupabase({
     msk: { data: [], error: null },
   });
-  const notFound = await checkActivationMskStatus('UNKNOWN-QR', missing.client);
-  assert.equal(notFound.reason, BLOCK_NOT_PACKED.replace('{status}', 'not found'));
+  assert.equal(await checkActivationMskStatus('UNKNOWN-QR', missing.client), null);
 
   // Unreachable msk -> fail-safe block with the honest offline message.
   const offline = createMockSupabase({
@@ -818,9 +821,20 @@ test('activation with an Active QR: createActivation blocks with the exact messa
   assert.equal(queries[0].select, 'status');
 });
 
-test('activation with a missing msk row: blocked as not found before any write', async () => {
+test('activation with a missing msk row: allowed through and writes both tables', async () => {
   const { client, queries } = createMockSupabase({
-    msk: { data: [], error: null },
+    // The msk table serves THREE reads/writes here:
+    //  - select status (gate)        -> no row (missing = ALLOWED)
+    //  - select id (duplicate guard) -> no row (never activated)
+    //  - insert (activation marking) -> ok
+    msk: (q) =>
+      q.select === 'status'
+        ? { data: [], error: null }
+        : q.select === 'id'
+          ? { data: [], error: null }
+          : { data: [{ id: 1 }], error: null },
+    pod: { data: [{ mqc: '566998' }], error: null },
+    data_updates: { data: null, error: null },
   });
   const result = await createActivation(
     USER,
@@ -832,10 +846,24 @@ test('activation with a missing msk row: blocked as not found before any write',
     null,
     client
   );
-  assert.equal(result.ok, false);
-  assert.equal(result.status, 'blocked');
-  assert.equal(result.reason, BLOCK_NOT_PACKED.replace('{status}', 'not found'));
-  assert.equal(queries.find((q) => q.insert), undefined);
+  // Condition A: the QR does not exist in msk - the activation
+  // proceeds normally.
+  assert.equal(result.ok, true);
+  assert.equal(result.status, 'synced');
+  assert.equal(result.qrCode, ';566998;148925;35;RAW-SHOE-1;');
+  // data_updates got the standard activation record.
+  const duInsert = queries.find((q) => q.table === 'data_updates' && q.insert);
+  assert.ok(duInsert);
+  assert.equal(duInsert.insert.length, 1);
+  assert.equal(duInsert.insert[0].qr_code, ';566998;148925;35;RAW-SHOE-1;');
+  assert.equal(duInsert.insert[0].department, 'Finishing 01');
+  assert.equal(duInsert.insert[0].count, 1);
+  // msk got the standard activation marking (msk_qr + org_qr ONLY).
+  const mskInsert = queries.find((q) => q.table === 'msk' && q.insert);
+  assert.ok(mskInsert);
+  assert.deepEqual(mskInsert.insert, [
+    { msk_qr: 'RAW-SHOE-1', org_qr: ';566998;148925;35;RAW-SHOE-1;' },
+  ]);
 });
 
 test('activation with an unreachable msk table: fail-safe block, nothing written', async () => {
