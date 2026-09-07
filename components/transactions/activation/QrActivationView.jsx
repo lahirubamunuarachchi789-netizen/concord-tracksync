@@ -21,6 +21,7 @@
 
 import { useCallback, useEffect, useRef, useState } from 'react';
 import dynamic from 'next/dynamic';
+import ErrorModal from '@/components/ErrorModal';
 import Notification from '@/components/Notification';
 import PageHeader from '@/components/PageHeader';
 import { AlertIcon, CheckIcon, SpinnerIcon } from '@/components/icons';
@@ -88,6 +89,10 @@ export default function QrActivationView() {
   const [queuedCount, setQueuedCount] = useState(0);
   const [syncing, setSyncing] = useState(false);
   const [toast, setToast] = useState(null);
+  // Blocking centered modal for validation failures and blocked/failed
+  // database writes: { title, message } | null. Stays open until the
+  // user dismisses it with "OK".
+  const [errorModal, setErrorModal] = useState(null);
 
   // Refs keep the stable scan callback free of stale closures.
   const paramsRef = useRef(params);
@@ -96,6 +101,8 @@ export default function QrActivationView() {
   userRef.current = user;
   const lastScanRef = useRef(null);
   lastScanRef.current = lastScan;
+  const errorModalRef = useRef(errorModal);
+  errorModalRef.current = errorModal;
 
   // Dual-Scan state (Finishing departments): which scan is expected
   // next and the Inner Box QR captured in scan 1 of 2.
@@ -117,11 +124,22 @@ export default function QrActivationView() {
     setFocusSignal((n) => n + 1);
   }, [dualEnabled]);
 
+  // Validation failures and blocked / failed database writes are
+  // surfaced as a CENTERED MODAL (not a corner toast) so they
+  // immediately grab the user's attention. Success / info statuses
+  // keep the auto-dismissing toast. PoSelect reuses this callback,
+  // so its add/delete PO failures also open the centered modal.
   const notify = useCallback((type, title, message) => {
+    if (type === 'error') {
+      setToast(null);
+      setErrorModal({ title, message });
+      return;
+    }
     setToast({ id: Date.now(), type, title, message });
   }, []);
 
-  // Auto-dismiss toasts after 4.5s.
+  // Auto-dismiss toasts after 4.5s. Error modals are NOT auto-dismissed -
+  // they stay until acknowledged with the "OK" button.
   useEffect(() => {
     if (!toast) return undefined;
     const timer = setTimeout(() => setToast(null), 4500);
@@ -206,6 +224,10 @@ export default function QrActivationView() {
     (value, source) => {
       const code = String(value || '').trim();
       if (!code) return;
+
+      // A blocking error dialog (validation / database failure) is open -
+      // it must be acknowledged with "OK" before further scans are processed.
+      if (errorModalRef.current) return;
 
       // Ignore the same code firing again within a short window.
       const at = Date.now();
@@ -514,7 +536,7 @@ export default function QrActivationView() {
               ) : (
                 <GunScannerInput
                   onScan={handleScan}
-                  paused={scanPaused}
+                  paused={scanPaused || Boolean(errorModal)}
                   focusSignal={focusSignal}
                   placeholder={
                     dualEnabled
@@ -600,6 +622,9 @@ export default function QrActivationView() {
       </div>
 
       <Notification toast={toast} onClose={() => setToast(null)} />
+
+      {/* Blocking centered alert: validation failures + database write errors. */}
+      <ErrorModal error={errorModal} onClose={() => setErrorModal(null)} />
     </div>
   );
 }

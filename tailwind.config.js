@@ -34,6 +34,10 @@ module.exports = {
           '0%': { opacity: '0', transform: 'translateX(24px)' },
           '100%': { opacity: '1', transform: 'translateX(0)' },
         },
+        'modal-pop': {
+          '0%': { opacity: '0', transform: 'scale(0.9) translateY(12px)' },
+          '100%': { opacity: '1', transform: 'scale(1) translateY(0)' },
+        },
         'float-slow': {
           '0%, 100%': { transform: 'translateY(0px)' },
           '50%': { transform: 'translateY(-14px)' },
@@ -42,6 +46,7 @@ module.exports = {
       animation: {
         'fade-slide': 'fade-slide 0.35s ease-out both',
         'toast-in': 'toast-in 0.3s ease-out both',
+        'modal-pop': 'modal-pop 0.25s cubic-bezier(0.16, 1, 0.3, 1) both',
         'float-slow': 'float-slow 7s ease-in-out infinite',
       },
     },

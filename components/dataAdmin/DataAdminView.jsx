@@ -3,9 +3,12 @@
 // Concord TrackSync - Data Admin view.
 // Manage the Live Dashboard `dash` table: insert/update per-department
 // daily plan, efficiency and manpower, with a live management table below.
+// Validation failures and blocked/failed database writes are surfaced as
+// a CENTERED MODAL (not a corner toast) via ErrorModal.
 
 import { useCallback, useEffect, useState } from 'react';
 import { AlertCircleIcon, CheckCircleIcon, SpinnerIcon } from '@/components/icons';
+import ErrorModal from '@/components/ErrorModal';
 import { fetchDepartmentOptions } from '@/lib/departmentsService';
 import {
   defaultFormDate,
@@ -28,6 +31,10 @@ export default function DataAdminView() {
   const [errors, setErrors] = useState({});
   const [saving, setSaving] = useState(false);
   const [toast, setToast] = useState(null); // { type: 'success'|'error', message }
+  // Blocking centered modal for validation failures and blocked/failed
+  // database writes: { title, message } | null. Stays open until the
+  // user dismisses it with "OK".
+  const [errorModal, setErrorModal] = useState(null);
   const [rows, setRows] = useState([]);
   const [rowsLoading, setRowsLoading] = useState(false);
   const [departmentOptions, setDepartmentOptions] = useState([]);
@@ -50,16 +57,22 @@ export default function DataAdminView() {
     setTimeout(() => setToast(null), 4000);
   }, []);
 
+  // Validation failures and database insert/update/delete failures open
+  // the centered modal (no corner toast) - the user must dismiss it.
+  const showErrorModal = useCallback((title, message) => {
+    setErrorModal({ title, message });
+  }, []);
+
   const loadRows = useCallback(async (date) => {
     setRowsLoading(true);
     try {
       setRows(await fetchDashRows({ date: date || undefined }));
     } catch (err) {
-      showToast('error', err?.message || 'Failed to load dash records.');
+      showErrorModal('Load failed', err?.message || 'The dash records could not be loaded from the database.');
     } finally {
       setRowsLoading(false);
     }
-  }, [showToast]);
+  }, [showErrorModal]);
 
   useEffect(() => {
     loadRows(filterDate);
@@ -75,7 +88,7 @@ export default function DataAdminView() {
     const result = validateDashForm(form);
     setErrors(result.errors);
     if (!result.ok) {
-      showToast('error', 'Please fix the highlighted fields.');
+      showErrorModal('Validation failed', 'Please fix the highlighted fields before saving the record.');
       return;
     }
     setSaving(true);
@@ -88,7 +101,7 @@ export default function DataAdminView() {
       setForm((f) => ({ ...EMPTY_FORM, date: f.date }));
       await loadRows(filterDate);
     } catch (err) {
-      showToast('error', err?.message || 'Failed to save the record.');
+      showErrorModal('Save failed', err?.message || 'The record could not be saved to the database.');
     } finally {
       setSaving(false);
     }
@@ -101,7 +114,7 @@ export default function DataAdminView() {
       showToast('success', `Deleted ${row.department} on ${row.date}.`);
       await loadRows(filterDate);
     } catch (err) {
-      showToast('error', err?.message || 'Failed to delete the record.');
+      showErrorModal('Delete failed', err?.message || 'The record could not be deleted from the database.');
     }
   };
 
@@ -363,6 +376,9 @@ export default function DataAdminView() {
           </div>
         </section>
       </div>
+
+      {/* Blocking centered alert: validation failures + database write errors. */}
+      <ErrorModal error={errorModal} onClose={() => setErrorModal(null)} />
     </div>
   );
 }
