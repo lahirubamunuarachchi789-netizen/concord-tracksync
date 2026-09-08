@@ -457,7 +457,7 @@ export default function LiveDashboard() {
             className={
               isTv
                 ? showAllShifts
-                  ? 'flex min-h-0 flex-col gap-3 pt-3'
+                  ? 'space-y-3 pt-3'
                   : 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pt-3'
                 : 'mt-4 space-y-6'
             }
@@ -467,7 +467,7 @@ export default function LiveDashboard() {
             className={
               isTv
                 ? showAllShifts
-                  ? 'flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200'
+                  ? 'overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200'
                   : 'flex min-h-0 flex-[1.7] flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200'
                 : 'overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200'
             }
@@ -656,7 +656,7 @@ export default function LiveDashboard() {
             className={
               isTv
                 ? showAllShifts
-                  ? 'flex min-h-0 flex-col overflow-visible rounded-2xl shadow-lg ring-1 ring-slate-800'
+                  ? 'overflow-visible rounded-2xl shadow-lg ring-1 ring-slate-800'
                   : 'flex min-h-0 flex-[2.9] flex-col overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800'
                 : 'overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800'
             }
@@ -665,7 +665,7 @@ export default function LiveDashboard() {
               className={
                 isTv
                   ? showAllShifts
-                    ? 'dashboard-scoreboard relative flex min-h-0 flex-col overflow-visible p-4 pb-6'
+                    ? 'dashboard-scoreboard relative overflow-visible p-4 pb-6'
                     : 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-hidden p-3 pb-4'
                   : 'dashboard-scoreboard relative p-5'
               }
@@ -834,7 +834,7 @@ export default function LiveDashboard() {
             className={
               isTv
                 ? showAllShifts
-                  ? 'flex min-h-0 flex-col overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200'
+                  ? 'overflow-hidden rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200'
                   : 'flex min-h-0 flex-[1.9] flex-col overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200'
                 : 'overflow-hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200'
             }
@@ -859,7 +859,7 @@ export default function LiveDashboard() {
               className={
                 isTv
                   ? showAllShifts
-                    ? 'flex min-h-0 items-end gap-2 sm:gap-4'
+                    ? 'flex h-44 items-end gap-2 sm:gap-4'
                     : 'flex min-h-0 flex-1 items-end gap-2 sm:gap-4'
                   : 'flex h-44 items-end gap-2 sm:gap-4'
               }
