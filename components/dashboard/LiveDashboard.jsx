@@ -481,7 +481,9 @@ export default function LiveDashboard() {
             <div
               className={
                 isTv
-                  ? 'dashboard-race relative min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-slate-200'
+                  ? showAllShifts
+                    ? 'dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200'
+                    : 'dashboard-race relative min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-slate-200'
                   : 'dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200'
               }
             >
