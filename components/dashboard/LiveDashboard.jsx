@@ -28,6 +28,7 @@ import {
   ROTATION_INTERVAL_MS,
   DASH_SHIFTS,
   shiftMinutes,
+  computeGpsTarget,
   filterRotationDepartments,
   loadRotationDepartments,
   saveRotationDepartments,
@@ -275,6 +276,18 @@ export default function LiveDashboard() {
   const activeShift =
     activeShiftIdx !== null && data ? data.hourly[activeShiftIdx] : null;
 
+  // Time-based GPS target: where production SHOULD be at this exact moment.
+  // Recomputed on every SLST clock tick so the amber pin advances between
+  // dashboard data refreshes (driven by dash.planed_hour when available).
+  const gpsTarget = useMemo(() => {
+    if (!data) return { qty: 0, ratio: 0, active: false };
+    return computeGpsTarget({
+      slstTimeHHmm: slstNow,
+      plannedQty: data.metrics.plannedQty,
+      plannedHours: data.plannedHours,
+    });
+  }, [data, slstNow]);
+
   return (
     <div className="mx-auto max-w-7xl animate-fade-slide">
       {/* Toolbar: filters + fullscreen toggle */}
@@ -449,6 +462,40 @@ export default function LiveDashboard() {
                   />
                 ))}
               </div>
+
+              {/* GPS target marker: where production SHOULD be right now */}
+              {gpsTarget.active ? (
+                <div
+                  className="absolute bottom-10 flex-col items-center transition-[left] duration-1000 ease-out"
+                  style={{
+                    left: `calc((100% - 60px) * ${gpsTarget.ratio.toFixed(4)})`,
+                  }}
+                  title={`Time-based target: ${Math.round(gpsTarget.qty)} units`}
+                >
+                  <span className="dashboard-gps-label mb-1 whitespace-nowrap rounded-full px-2 py-0.5 text-[10px] font-extrabold text-amber-900 shadow ring-1 ring-amber-300">
+                    🎯 {Math.round(gpsTarget.qty)}
+                  </span>
+                  <svg
+                    className="dashboard-gps-pin h-7 w-6 drop-shadow"
+                    viewBox="0 0 24 28"
+                    aria-label={`Target ${Math.round(gpsTarget.qty)} units`}
+                  >
+                    <defs>
+                      <linearGradient id="gpsPin" x1="0" y1="0" x2="0" y2="1">
+                        <stop offset="0%" stopColor="#fbbf24" />
+                        <stop offset="100%" stopColor="#d97706" />
+                      </linearGradient>
+                    </defs>
+                    <path
+                      d="M12 0 C5.4 0 0 5.4 0 12 C0 20 12 28 12 28 C12 28 24 20 24 12 C24 5.4 18.6 0 12 0 Z"
+                      fill="url(#gpsPin)"
+                      stroke="#92400e"
+                      strokeWidth="1"
+                    />
+                    <circle cx="12" cy="12" r="4" fill="#fffbeb" />
+                  </svg>
+                </div>
+              ) : null}
 
               {/* Red sports car: position maps exactly to completion % */}
               <div

@@ -17,6 +17,15 @@ create table if not exists "dash" (
   constraint dash_department_date_unique unique (department, date)
 );
 
+-- planed_hour: the day's planned working hours for the department
+-- (e.g. 9.5). Drives the Live Dashboard's time-based GPS target marker:
+-- the expected cumulative output at time t is
+--   planed_qty * (elapsed planned hours(t) / planed_hour)
+-- so the marker advances at planed_qty / planed_hour units per planned
+-- hour while the SLST shift is actually running. Migration is
+-- idempotent for live tables created before the column existed.
+alter table "dash" add column if not exists planed_hour numeric not null default 9.5;
+
 create index if not exists dash_department_date_idx
   on "dash" (department, date);
 

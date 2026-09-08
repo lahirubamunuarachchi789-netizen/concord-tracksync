@@ -241,6 +241,46 @@ body.tv-mode .app-shell-main {
 }
 
 /* ============================================================
+   Live Dashboard - GPS target marker (time-based plan position)
+   The amber pin rides the same track as the red car and marks
+   where production SHOULD be at this exact moment.
+   ============================================================ */
+
+/* Soft pulse so the GPS pin reads as "live" on the factory TV */
+@keyframes gps-pin-pulse {
+  0%,
+  100% {
+    transform: translateY(0) scale(1);
+    filter: drop-shadow(0 0 2px rgba(217, 119, 6, 0.55));
+  }
+  50% {
+    transform: translateY(-2px) scale(1.05);
+    filter: drop-shadow(0 0 7px rgba(217, 119, 6, 0.9));
+  }
+}
+
+.dashboard-gps-pin {
+  animation: gps-pin-pulse 1.4s ease-in-out infinite;
+  transform-origin: center bottom;
+}
+
+/* Amber glow for the target-quantity label riding on the pin */
+@keyframes gps-label-glow {
+  0%,
+  100% {
+    box-shadow: 0 0 8px rgba(245, 158, 11, 0.5);
+  }
+  50% {
+    box-shadow: 0 0 18px rgba(245, 158, 11, 0.9);
+  }
+}
+
+.dashboard-gps-label {
+  background: linear-gradient(90deg, #fbbf24, #f59e0b);
+  animation: gps-label-glow 1.6s ease-in-out infinite;
+}
+
+/* ============================================================
    Live Dashboard - Retro Cricket Scoreboard theme
    Dark textured panel, split-flap digits, live rolling counts.
    ============================================================ */

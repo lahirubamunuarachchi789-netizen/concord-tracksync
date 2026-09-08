@@ -15,6 +15,9 @@ import {
   shiftMinutes,
   aggregateHourlyOutput,
   aggregateWeeklyOutput,
+  elapsedPlannedHours,
+  computeGpsTarget,
+  createDashPlannedHoursFetcher,
   ROTATION_INTERVAL_MS,
 } from '../lib/dashboardService.js';
 
