@@ -538,6 +538,15 @@ body.dashboard-live-mode footer {
   box-shadow: 0 0 14px rgba(52, 211, 153, 0.4);
 }
 
+/* TV-mode toggle: larger touch target, crisp edges, no clipping */
+.sb-toggle--tv {
+  padding: 0.55rem 1.4rem;
+  font-size: 12px;
+  line-height: 1;
+  white-space: nowrap;
+  box-shadow: 0 0 0 1px rgba(52, 211, 153, 0.6);
+}
+
 /* Expanded shift cells */
 .sb-shift-cell {
   border-radius: 0.5rem;

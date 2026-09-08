@@ -665,8 +665,8 @@ export default function LiveDashboard() {
               className={
                 isTv
                   ? showAllShifts
-                    ? 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-visible p-3'
-                    : 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-hidden p-3'
+                    ? 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-visible p-3 pb-4'
+                    : 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-hidden p-3 pb-4'
                   : 'dashboard-scoreboard relative p-5'
               }
             >
@@ -754,7 +754,7 @@ export default function LiveDashboard() {
                 <button
                   type="button"
                   onClick={() => setShowAllShifts((v) => !v)}
-                  className="sb-toggle ml-auto"
+                  className={`sb-toggle ml-auto ${isTv ? 'sb-toggle--tv' : ''}`}
                   aria-expanded={showAllShifts}
                 >
                   {showAllShifts ? '▲ Hide All Shifts' : '▼ View All Shifts'}
