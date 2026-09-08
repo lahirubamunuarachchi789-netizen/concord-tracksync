@@ -126,6 +126,7 @@ test('validateDashForm accepts a valid dash record', () => {
     date: '2026-09-09',
     department: 'Desma',
     planed_qty: '1200',
+    planed_hour: '9.5',
     eficiancy: '85.5',
     available_man_power: '45',
   });
@@ -134,22 +135,24 @@ test('validateDashForm accepts a valid dash record', () => {
     date: '2026-09-09',
     department: 'Desma',
     planed_qty: 1200,
+    planed_hour: 9.5,
     eficiancy: 85.5,
     available_man_power: 45,
   });
 });
 
 test('validateDashForm rejects invalid fields', () => {
-  assert.equal(validateDashForm({ date: 'bad', department: '', planed_qty: -1, eficiancy: 200, available_man_power: 2.5 }).ok, false);
+  assert.equal(validateDashForm({ date: 'bad', department: '', planed_qty: -1, planed_hour: -2, eficiancy: 200, available_man_power: 2.5 }).ok, false);
   const result = validateDashForm({
     date: 'nope',
     department: '  ',
     planed_qty: 'x',
+    planed_hour: 0,
     eficiancy: 150,
     available_man_power: 'a',
   });
   assert.equal(result.ok, false);
-  for (const key of ['date', 'department', 'planed_qty', 'eficiancy', 'available_man_power']) {
+  for (const key of ['date', 'department', 'planed_qty', 'planed_hour', 'eficiancy', 'available_man_power']) {
     assert.ok(result.errors[key], key);
   }
 });
@@ -159,6 +162,7 @@ test('validateDashForm treats empty efficiency as 0', () => {
     date: '2026-09-09',
     department: 'Lasting 01',
     planed_qty: 10,
+    planed_hour: 8,
     eficiancy: '',
     available_man_power: 3,
   });
@@ -172,14 +176,17 @@ test('normalizeDashRow coerces dash row types', () => {
     date: '2026-09-09',
     department: 'Desma',
     planed_qty: '500',
+    planed_hour: '9.5',
     eficiancy: '62.5',
     available_man_power: '12',
   });
   assert.equal(row.id, 7);
   assert.equal(row.planed_qty, 500);
+  assert.equal(row.planed_hour, 9.5);
   assert.equal(row.eficiancy, 62.5);
   assert.equal(row.available_man_power, 12);
   assert.deepEqual(normalizeDashRow(null).department, '');
+  assert.equal(normalizeDashRow(null).planed_hour, null);
 });
 
 // ---------------- Rotation department selection ----------------

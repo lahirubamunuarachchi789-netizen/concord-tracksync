@@ -22,6 +22,7 @@ const EMPTY_FORM = {
   date: '',
   department: '',
   planed_qty: '',
+  planed_hour: '',
   eficiancy: '',
   available_man_power: '',
 };
@@ -123,6 +124,7 @@ export default function DataAdminView() {
       date: row.date,
       department: row.department,
       planed_qty: String(row.planed_qty),
+      planed_hour: row.planed_hour == null ? '' : String(row.planed_hour),
       eficiancy: row.eficiancy == null ? '' : String(row.eficiancy),
       available_man_power: String(row.available_man_power),
     });
@@ -227,6 +229,25 @@ export default function DataAdminView() {
             </div>
 
             <div>
+              <label htmlFor="dash-hours" className="mb-1 block text-xs font-semibold text-slate-500">
+                Planned Hours
+              </label>
+              <input
+                id="dash-hours"
+                type="number"
+                min="0.5"
+                step="0.5"
+                value={form.planed_hour}
+                onChange={setField('planed_hour')}
+                placeholder="e.g. 9.5"
+                className={inputCls('planed_hour')}
+              />
+              {errors.planed_hour ? (
+                <p className="mt-1 text-xs text-red-500">{errors.planed_hour}</p>
+              ) : null}
+            </div>
+
+            <div>
               <label htmlFor="dash-eff" className="mb-1 block text-xs font-semibold text-slate-500">
                 Efficiency (%)
               </label>
@@ -315,6 +336,7 @@ export default function DataAdminView() {
                   <th className="px-4 py-3 font-semibold">Date</th>
                   <th className="px-4 py-3 font-semibold">Department</th>
                   <th className="px-4 py-3 text-right font-semibold">Planned</th>
+                  <th className="px-4 py-3 text-right font-semibold">Hours</th>
                   <th className="px-4 py-3 text-right font-semibold">Efficiency</th>
                   <th className="px-4 py-3 text-right font-semibold">Man Power</th>
                   <th className="px-4 py-3 text-right font-semibold">Actions</th>
@@ -323,7 +345,7 @@ export default function DataAdminView() {
               <tbody>
                 {rowsLoading ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                       <span className="inline-flex items-center gap-2">
                         <SpinnerIcon /> Loading records...
                       </span>
@@ -331,7 +353,7 @@ export default function DataAdminView() {
                   </tr>
                 ) : rows.length === 0 ? (
                   <tr>
-                    <td colSpan={6} className="px-4 py-8 text-center text-slate-400">
+                    <td colSpan={7} className="px-4 py-8 text-center text-slate-400">
                       No dash records found{filterDate ? ` for ${filterDate}` : ''}.
                     </td>
                   </tr>
@@ -345,6 +367,9 @@ export default function DataAdminView() {
                       <td className="px-4 py-2.5 font-semibold text-slate-700">{row.department}</td>
                       <td className="px-4 py-2.5 text-right font-bold text-slate-900">
                         {row.planed_qty.toLocaleString()}
+                      </td>
+                      <td className="px-4 py-2.5 text-right text-slate-600">
+                        {row.planed_hour == null ? '-' : row.planed_hour}
                       </td>
                       <td className="px-4 py-2.5 text-right text-slate-600">
                         {row.eficiancy == null ? '-' : `${row.eficiancy}%`}
