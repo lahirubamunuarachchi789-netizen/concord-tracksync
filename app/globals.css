@@ -63,6 +63,42 @@ body.tv-mode .app-shell-main {
   padding: 0 !important;
 }
 
+/* ------------------------------------------------------------
+   Live Dashboard - STRICT single-viewport (no-scroll) layout
+   While the dashboard is mounted (body.dashboard-live-mode) the
+   app-shell column is locked to exactly 100vh, the chrome/footer
+   are hidden and the main area fills the full viewport so the WHOLE
+   dashboard (race track, scoreboard, metric cards, weekly chart)
+   fits one screen - laptops AND 1920x1080 factory TVs - with zero
+   vertical scrolling and no empty side gaps.
+   ------------------------------------------------------------ */
+body.dashboard-live-mode {
+  overflow: hidden;
+}
+
+body.dashboard-live-mode .app-shell-column {
+  height: 100vh;
+  min-height: 0;
+  overflow: hidden;
+}
+
+body.dashboard-live-mode .app-shell-main {
+  flex: 1 1 0%;
+  min-height: 0;
+  height: 100vh;
+  overflow: hidden;
+  padding: 0 !important;
+}
+
+body.dashboard-live-mode .app-shell-main > * {
+  height: 100%;
+  min-height: 0;
+}
+
+body.dashboard-live-mode footer {
+  display: none;
+}
+
 /* ============================================================
    Live Dashboard - Advanced Red Sports Car race track
    Spinning wheels, vibrating chassis, glowing exhaust trail,

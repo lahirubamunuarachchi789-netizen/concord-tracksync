@@ -263,3 +263,59 @@ test('loadRotationDepartments is safe server-side (no window)', () => {
   assert.deepEqual(loadRotationDepartments(null), []);
   assert.equal(saveRotationDepartments(['Desma'], null), true);
 });
+
+/* ================= GPS target marker (time-based plan) =================
+ * The GPS pin must be STRICTLY capped at the day's planned_qty - it may
+ * never pass the finish line, even when the elapsed planned hours run
+ * past the plan (overtime). */
+
+test('GPS: mid-shift target advances proportionally below the plan', () => {
+  // 08:45 = exactly 1 planned hour elapsed (07:45 -> 08:45).
+  const target = computeGpsTarget({
+    slstTimeHHmm: '08:45',
+    plannedQty: 950,
+    plannedHours: 9.5,
+  });
+  assert.equal(target.active, true);
+  assert.equal(target.rate, 100); // 950 / 9.5
+  assert.equal(target.qty, 100); // 1h * 100 = 100 < 950 (uncapped path)
+  assert.equal(target.ratio, 100 / 950);
+});
+
+test('compute: GPS target is strictly capped at planned_qty past the planned hours', () => {
+  // 18:30 = the last shift window end (10.75 planned hours elapsed) while the
+  // plan only spread over 9.5h -> raw target = 10.75 * (950 / 9.5) = 1075
+  // which EXCEEDS the plan. The pin must stay at the finish line instead.
+  const target = computeGpsTarget({ slstTimeHHmm: '18:30', plannedQty: 950, plannedHours: 9.5 });
+  assert.equal(target.active, true);
+  assert.equal(target.qty, 950); // Math.min(1075, 950) === 950
+  assert.equal(target.ratio, 1); // pinned exactly at the finish line
+});
+
+test('compute: GPS cap also applies to a late overtime time', () => {
+  // Well after the last shift window - target would keep counting up.
+  const target = computeGpsTarget({ slstTimeHHmm: '21:00', plannedQty: 1200, plannedHours: 10 });
+  assert.equal(target.active, true);
+  assert.equal(target.qty, 1200); // capped - never exceeds planned_qty
+  assert.equal(target.ratio, 1);
+});
+
+test('compute: fallback (no planed_hour) is also capped at planned_qty', () => {
+  // Fallback spreads the plan linearly over the shift window; at the very
+  // end the raw target equals the whole plan, never more.
+  const atEnd = computeGpsTarget({ slstTimeHHmm: '18:30', plannedQty: 950, plannedHours: null });
+  assert.equal(atEnd.active, true);
+  assert.equal(atEnd.qty, 950);
+  assert.equal(atEnd.ratio, 1);
+
+  // Pre-shift floor stays at 0 (never negative).
+  const preShift = computeGpsTarget({ slstTimeHHmm: '04:00', plannedQty: 950, plannedHours: null });
+  assert.equal(preShift.qty, 0);
+  assert.equal(preShift.ratio, 0);
+});
+
+test('compute: GPS target stays inactive when there is no usable plan', () => {
+  const target = computeGpsTarget({ slstTimeHHmm: '10:00', plannedQty: 0, plannedHours: null });
+  assert.equal(target.active, false);
+  assert.equal(target.qty, 0);
+});

@@ -235,6 +235,15 @@ export default function LiveDashboard() {
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
+  // Strict single-viewport mode: while the dashboard is mounted, lock the
+  // app-shell column to exactly 100vh and hide the chrome/footer so the WHOLE
+  // dashboard (track, scoreboard, metric cards, weekly chart) fits one screen
+  // with zero vertical scrolling - on laptops AND 1920x1080 factory TVs.
+  useEffect(() => {
+    document.body.classList.add('dashboard-live-mode');
+    return () => document.body.classList.remove('dashboard-live-mode');
+  }, []);
+
   const handleDepartmentChange = (e) => {
     setDepartmentId(e.target.value);
     setRotationIndex(0);
@@ -261,15 +270,18 @@ export default function LiveDashboard() {
     saveRotationDepartments([]);
   };
 
-  // Current SLST clock time (updates every 30s alongside live refresh).
-  const [slstNow, setSlstNow] = useState(() => formatSlstTimestamp(new Date()).slice(11, 16));
+  // Live SLST clock - updates every SECOND so the header clock, the shift
+  // indicator and the time-based GPS pin all stay live. Stored as the full
+  // 'YYYY-MM-DD HH:mm:ss' string; the existing SHIFT/GPS logic reads the
+  // 'HH:mm' slice.
+  const [slstClock, setSlstClock] = useState(() => formatSlstTimestamp(new Date()));
   useEffect(() => {
-    const t = setInterval(
-      () => setSlstNow(formatSlstTimestamp(new Date()).slice(11, 16)),
-      30000
-    );
+    const t = setInterval(() => setSlstClock(formatSlstTimestamp(new Date())), 1000);
     return () => clearInterval(t);
   }, []);
+  const slstNow = slstClock.slice(11, 16); // 'HH:mm' for shift / GPS logic
+  const slstDate = slstClock.slice(0, 10); // 'YYYY-MM-DD' for the clock panel
+  const slstTime = slstClock.slice(11, 19); // 'HH:mm:ss' for the clock panel
 
   // Active shift + its live output for the main scoreboard counter.
   const activeShiftIdx = useMemo(() => currentShiftIndex(slstNow), [slstNow]);
@@ -289,18 +301,39 @@ export default function LiveDashboard() {
   }, [data, slstNow]);
 
   return (
-    <div className="mx-auto max-w-7xl animate-fade-slide">
-      {/* Toolbar: filters + fullscreen toggle */}
-      <div className="flex flex-wrap items-center gap-3">
-        <div>
-          <h1 className="text-xl font-extrabold text-slate-900">Live Dashboard</h1>
-          <p className="text-xs text-slate-400">
+    <div className="flex h-full min-h-0 w-full animate-fade-slide flex-col overflow-hidden p-3 sm:p-4">
+      {/* Toolbar: title + live SLST clock + filters/fullscreen (shrink-0) */}
+      <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
+        <div className="min-w-0">
+          <h1 className="text-lg font-extrabold leading-tight text-slate-900">
+            Live Dashboard
+          </h1>
+          <p className="text-[11px] leading-tight text-slate-400">
             {isAutoRotation
               ? 'Auto-rotating every 15s - select a department & date to pin'
               : `Live production - ${departmentId || 'all departments'}`}
           </p>
         </div>
-        <div className="ml-auto flex-wrap items-center gap-2">
+
+        {/* Prominent live SLST clock in the dashboard header */}
+        <div className="flex shrink-0 items-center gap-2.5 rounded-2xl bg-slate-900 px-3.5 py-1.5 shadow-lg ring-1 ring-slate-700">
+          <span className="flex h-9 w-9 items-center justify-center rounded-xl bg-indigo-600/20 text-base ring-1 ring-indigo-400/30">
+            🕐
+          </span>
+          <span className="flex flex-col leading-none">
+            <span className="text-[9px] font-black uppercase tracking-[0.25em] text-amber-400">
+              Sri Lanka Time
+            </span>
+            <span className="mt-0.5 text-xs font-medium tabular-nums text-slate-300">
+              {slstDate}
+            </span>
+          </span>
+          <span className="text-2xl font-black tabular-nums leading-none text-white">
+            {slstTime}
+          </span>
+        </div>
+
+        <div className="ml-auto flex flex-wrap items-center gap-2">
           <select
             aria-label="Department filter"
             value={departmentId}
@@ -398,20 +431,23 @@ export default function LiveDashboard() {
       ) : null}
 
       {!data ? (
-        <div className="mt-10 flex items-center justify-center gap-2 text-sm text-slate-400">
+        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-slate-400">
           <SpinnerIcon /> {loading ? 'Loading live data...' : 'No plan rows for this date.'}
         </div>
       ) : (
         <>
+          {/* Strict single-viewport body: proportional flex scaling - every
+              panel shares the remaining 100vh so nothing overflows. */}
+          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pt-3">
           {/* Red sports car race track (kept) */}
-          <section className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div className="mb-2 flex items-center justify-between text-sm">
-              <span className="font-bold text-slate-900">{data.departmentId}</span>
-              <span className="rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
+          <section className="flex min-h-0 flex-[1.7] flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
+            <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2 px-3 text-sm">
+              <span className="truncate font-bold text-slate-900">{data.departmentId}</span>
+              <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
                 Target: {fmt(data.metrics.plannedQty)} units
               </span>
             </div>
-            <div className="dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200">
+            <div className="dashboard-race relative min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-slate-200">
               {/* Racing lane surface */}
               <div className="dashboard-lane absolute inset-x-0 bottom-0 h-16" />
               {/* Lane markers (moving dashes) */}
@@ -577,8 +613,8 @@ export default function LiveDashboard() {
           </section>
 
           {/* Retro cricket scoreboard (replaces the hourly output table) */}
-          <section className="mt-4 overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800">
-            <div className="dashboard-scoreboard relative p-5">
+          <section className="flex min-h-0 flex-[2.9] flex-col overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800">
+            <div className="dashboard-scoreboard relative flex min-h-0 flex-1 flex-col justify-center overflow-hidden p-3">
               {/* Marquee strip */}
               <div className="sb-marquee mb-4 flex items-center justify-between">
                 <span className="text-[11px] font-black uppercase tracking-[0.3em] text-amber-400">
@@ -694,7 +730,7 @@ export default function LiveDashboard() {
           </section>
 
           {/* Metric cards */}
-          <section className="mt-4 grid gap-4 sm:grid-cols-3">
+          <section className="grid shrink-0 grid-cols-3 gap-3">
             {[
               { label: 'Planned QTY', value: fmt(data.metrics.plannedQty), Icon: LayersIcon },
               {
@@ -703,43 +739,45 @@ export default function LiveDashboard() {
                 Icon: BoltIcon,
               },
               {
-                label: 'Available Man Power',
+                label: 'Man Power',
                 value: fmt(data.metrics.manPower),
                 Icon: TrendingUpIcon,
               },
             ].map(({ label, value, Icon }) => (
               <div
                 key={label}
-                className="flex items-center gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200"
+                className="flex min-w-0 items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
               >
-                <span className="rounded-xl bg-indigo-50 p-3 text-indigo-600">
-                  <Icon />
+                <span className="shrink-0 rounded-xl bg-indigo-50 p-2.5 text-indigo-600">
+                  <Icon className="h-5 w-5" />
                 </span>
-                <div>
-                  <p className="text-xs font-medium text-slate-400">{label}</p>
-                  <p className="text-2xl font-extrabold text-slate-900">{value}</p>
+                <div className="min-w-0">
+                  <p className="truncate text-[10px] font-medium text-slate-400">{label}</p>
+                  <p className="truncate text-xl font-extrabold text-slate-900">{value}</p>
                 </div>
               </div>
             ))}
           </section>
 
           {/* Weekly chart */}
-          <section className="mt-6 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200">
-            <div className="mb-4 flex items-center justify-between">
-              <div>
-                <h2 className="text-sm font-bold text-slate-900">Weekly production output</h2>
-                <p className="text-xs text-slate-400">Valid units per day (Mon-Sun)</p>
+          <section className="flex min-h-0 flex-[1.9] flex-col overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+            <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
+              <div className="min-w-0">
+                <h2 className="truncate text-sm font-bold text-slate-900">
+                  Weekly production output
+                </h2>
+                <p className="text-[10px] text-slate-400">Valid units per day (Mon-Sun)</p>
               </div>
-              <div className="flex items-center gap-2 text-xs font-semibold">
-                <span className="rounded-full bg-slate-100 px-3 py-1 text-slate-600">
+              <div className="flex shrink-0 items-center gap-2 text-[11px] font-semibold">
+                <span className="rounded-full bg-slate-100 px-2.5 py-1 text-slate-600">
                   Week plan: {fmt(data.weekPlanQty)}
                 </span>
-                <span className="rounded-full bg-emerald-50 px-3 py-1 text-emerald-600 ring-1 ring-emerald-100">
-                  Achievement: {Math.round(data.weekAchievement * 100)}%
+                <span className="rounded-full bg-emerald-50 px-2.5 py-1 text-emerald-600 ring-1 ring-emerald-100">
+                  {Math.round(data.weekAchievement * 100)}%
                 </span>
               </div>
             </div>
-            <div className="flex h-44 items-end gap-2 sm:gap-4">
+            <div className="flex min-h-0 flex-1 items-end gap-2 sm:gap-4">
               {data.weekly.map((w) => {
                 const max = Math.max(...data.weekly.map((x) => x.qty), 1);
                 return (
@@ -760,10 +798,11 @@ export default function LiveDashboard() {
             </div>
           </section>
 
-          <p className="mt-4 pb-4 text-center text-xs text-slate-400">
+          <p className="shrink-0 pb-0.5 pt-1 text-center text-[10px] text-slate-400">
             Live refresh every 30s
-            {lastUpdated ? ` - last updated ${lastUpdated.toLocaleTimeString()}` : ''}
+            {lastUpdated ? ` · last updated ${lastUpdated.toLocaleTimeString()}` : ''}
           </p>
+          </div>
         </>
       )}
     </div>
