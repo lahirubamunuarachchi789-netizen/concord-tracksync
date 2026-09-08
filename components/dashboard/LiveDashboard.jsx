@@ -235,14 +235,14 @@ export default function LiveDashboard() {
     return () => document.removeEventListener('fullscreenchange', onChange);
   }, []);
 
-  // Strict single-viewport mode: while the dashboard is mounted, lock the
-  // app-shell column to exactly 100vh and hide the chrome/footer so the WHOLE
-  // dashboard (track, scoreboard, metric cards, weekly chart) fits one screen
-  // with zero vertical scrolling - on laptops AND 1920x1080 factory TVs.
+  // Strict single-viewport (no-scroll) mode applies to the BODY only in
+  // Full Screen / TV live mode (`isTv`). In Normal Mode the browser shell
+  // (sidebar + header) stays visible and the page scrolls naturally, so the
+  // track, scoreboard and metric cards are never cut off or hidden.
   useEffect(() => {
-    document.body.classList.add('dashboard-live-mode');
+    document.body.classList.toggle('dashboard-live-mode', isTv);
     return () => document.body.classList.remove('dashboard-live-mode');
-  }, []);
+  }, [isTv]);
 
   const handleDepartmentChange = (e) => {
     setDepartmentId(e.target.value);
@@ -301,7 +301,13 @@ export default function LiveDashboard() {
   }, [data, slstNow]);
 
   return (
-    <div className="flex h-full min-h-0 w-full animate-fade-slide flex-col overflow-hidden p-3 sm:p-4">
+    <div
+      className={
+        isTv
+          ? 'flex h-full min-h-0 w-full animate-fade-slide flex-col overflow-hidden p-3 sm:p-4'
+          : 'mx-auto max-w-7xl animate-fade-slide'
+      }
+    >
       {/* Toolbar: title + live SLST clock + filters/fullscreen (shrink-0) */}
       <div className="flex shrink-0 flex-wrap items-center gap-x-3 gap-y-2">
         <div className="min-w-0">
@@ -431,23 +437,48 @@ export default function LiveDashboard() {
       ) : null}
 
       {!data ? (
-        <div className="flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-slate-400">
+        <div
+          className={
+            isTv
+              ? 'flex min-h-0 flex-1 items-center justify-center gap-2 text-sm text-slate-400'
+              : 'mt-10 flex items-center justify-center gap-2 text-sm text-slate-400'
+          }
+        >
           <SpinnerIcon /> {loading ? 'Loading live data...' : 'No plan rows for this date.'}
         </div>
       ) : (
         <>
-          {/* Strict single-viewport body: proportional flex scaling - every
-              panel shares the remaining 100vh so nothing overflows. */}
-          <div className="flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pt-3">
+          {/* Body wrapper: TV mode = strict 100vh flex (no scroll, panels
+              share the viewport); Normal mode = standard responsive flow
+              with natural section heights + normal vertical scrolling. */}
+          <div
+            className={
+              isTv
+                ? 'flex min-h-0 flex-1 flex-col gap-3 overflow-hidden pt-3'
+                : 'mt-4 space-y-6'
+            }
+          >
           {/* Red sports car race track (kept) */}
-          <section className="flex min-h-0 flex-[1.7] flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200">
-            <div className="mb-1.5 flex shrink-0 items-center justify-between gap-2 px-3 text-sm">
+          <section
+            className={
+              isTv
+                ? 'flex min-h-0 flex-[1.7] flex-col overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200'
+                : 'overflow-hidden rounded-2xl bg-white shadow-sm ring-1 ring-slate-200'
+            }
+          >
+            <div className="mb-2 flex shrink-0 items-center justify-between gap-2 px-3 text-sm">
               <span className="truncate font-bold text-slate-900">{data.departmentId}</span>
               <span className="shrink-0 rounded-full bg-indigo-50 px-3 py-1 text-xs font-semibold text-indigo-600 ring-1 ring-indigo-100">
                 Target: {fmt(data.metrics.plannedQty)} units
               </span>
             </div>
-            <div className="dashboard-race relative min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-slate-200">
+            <div
+              className={
+                isTv
+                  ? 'dashboard-race relative min-h-0 flex-1 overflow-hidden rounded-xl ring-1 ring-slate-200'
+                  : 'dashboard-race relative h-36 overflow-hidden rounded-xl ring-1 ring-slate-200'
+              }
+            >
               {/* Racing lane surface */}
               <div className="dashboard-lane absolute inset-x-0 bottom-0 h-16" />
               {/* Lane markers (moving dashes) */}
@@ -613,10 +644,22 @@ export default function LiveDashboard() {
           </section>
 
           {/* Retro cricket scoreboard (replaces the hourly output table) */}
-          <section className="flex min-h-0 flex-[2.9] flex-col overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800">
-            <div className="dashboard-scoreboard relative flex min-h-0 flex-1 flex-col justify-center overflow-hidden p-3">
-              {/* Marquee strip */}
-              <div className="sb-marquee mb-4 flex items-center justify-between">
+          <section
+            className={
+              isTv
+                ? 'flex min-h-0 flex-[2.9] flex-col overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800'
+                : 'overflow-hidden rounded-2xl shadow-lg ring-1 ring-slate-800'
+            }
+          >
+            <div
+              className={
+                isTv
+                  ? 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-hidden p-3'
+                  : 'dashboard-scoreboard relative p-5'
+              }
+            >
+              {/* Marquee strip - fixed, never compressed */}
+              <div className="sb-marquee mb-4 flex shrink-0 items-center justify-between">
                 <span className="text-[11px] font-black uppercase tracking-[0.3em] text-amber-400">
                   🏏 Concord TrackSync · Live Score
                 </span>
@@ -625,7 +668,7 @@ export default function LiveDashboard() {
                 </span>
               </div>
 
-              <div className="grid gap-4 lg:grid-cols-3">
+              <div className="grid shrink-0 gap-4 lg:grid-cols-3">
                 {/* MAIN SCORE: current shift with flip digits */}
                 <div className="sb-panel lg:col-span-2">
                   <p className="sb-label">Current Shift Output</p>
@@ -687,8 +730,8 @@ export default function LiveDashboard() {
                 </div>
               </div>
 
-              {/* Bottom strip: total + toggle */}
-              <div className="mt-4 flex flex-wrap items-center gap-3">
+              {/* Bottom strip: total + toggle - fixed, never compressed */}
+              <div className="mt-4 flex shrink-0 flex-wrap items-center gap-3">
                 <span className="sb-total-pill">
                   Day total: <FlipNumber value={data.actualQty} digits={4} />
                 </span>
@@ -706,9 +749,13 @@ export default function LiveDashboard() {
                 </button>
               </div>
 
-              {/* Expandable full 10-shift breakdown */}
-              {showAllShifts ? (
-                <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
+              {/* Expandable full 10-shift breakdown. In TV mode the grid
+                  lives in a scrollable region (flex-1 + overflow-y-auto) so
+                  the expanded cells NEVER collapse the track / metric cards;
+                  in Normal mode it follows standard document flow. */}
+              <div className={isTv ? 'mt-3 min-h-0 flex-1 overflow-y-auto pr-1' : 'mt-4'}>
+                {showAllShifts ? (
+                  <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                   {data.hourly.map((h, i) => (
                     <div
                       key={h.label}
@@ -725,12 +772,19 @@ export default function LiveDashboard() {
                     </div>
                   ))}
                 </div>
-              ) : null}
+                ) : null}
+              </div>
             </div>
           </section>
 
           {/* Metric cards */}
-          <section className="grid shrink-0 grid-cols-3 gap-3">
+          <section
+            className={
+              isTv
+                ? 'grid shrink-0 grid-cols-3 gap-3'
+                : 'grid gap-4 sm:grid-cols-3'
+            }
+          >
             {[
               { label: 'Planned QTY', value: fmt(data.metrics.plannedQty), Icon: LayersIcon },
               {
@@ -746,7 +800,11 @@ export default function LiveDashboard() {
             ].map(({ label, value, Icon }) => (
               <div
                 key={label}
-                className="flex min-w-0 items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200"
+                className={
+                  isTv
+                    ? 'flex min-w-0 items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200'
+                    : 'flex items-center gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200'
+                }
               >
                 <span className="shrink-0 rounded-xl bg-indigo-50 p-2.5 text-indigo-600">
                   <Icon className="h-5 w-5" />
@@ -760,7 +818,13 @@ export default function LiveDashboard() {
           </section>
 
           {/* Weekly chart */}
-          <section className="flex min-h-0 flex-[1.9] flex-col overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200">
+          <section
+            className={
+              isTv
+                ? 'flex min-h-0 flex-[1.9] flex-col overflow-hidden rounded-2xl bg-white p-3 shadow-sm ring-1 ring-slate-200'
+                : 'overflow-hidden rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200'
+            }
+          >
             <div className="mb-2 flex shrink-0 items-center justify-between gap-2">
               <div className="min-w-0">
                 <h2 className="truncate text-sm font-bold text-slate-900">
@@ -777,7 +841,13 @@ export default function LiveDashboard() {
                 </span>
               </div>
             </div>
-            <div className="flex min-h-0 flex-1 items-end gap-2 sm:gap-4">
+            <div
+              className={
+                isTv
+                  ? 'flex min-h-0 flex-1 items-end gap-2 sm:gap-4'
+                  : 'flex h-44 items-end gap-2 sm:gap-4'
+              }
+            >
               {data.weekly.map((w) => {
                 const max = Math.max(...data.weekly.map((x) => x.qty), 1);
                 return (
@@ -798,7 +868,13 @@ export default function LiveDashboard() {
             </div>
           </section>
 
-          <p className="shrink-0 pb-0.5 pt-1 text-center text-[10px] text-slate-400">
+          <p
+            className={
+              isTv
+                ? 'shrink-0 pb-0.5 pt-1 text-center text-[10px] text-slate-400'
+                : 'pb-6 text-center text-xs text-slate-400'
+            }
+          >
             Live refresh every 30s
             {lastUpdated ? ` · last updated ${lastUpdated.toLocaleTimeString()}` : ''}
           </p>
