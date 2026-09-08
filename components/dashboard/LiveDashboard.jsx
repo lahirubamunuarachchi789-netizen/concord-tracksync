@@ -665,7 +665,7 @@ export default function LiveDashboard() {
               className={
                 isTv
                   ? showAllShifts
-                    ? 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-visible p-3 pb-4'
+                    ? 'dashboard-scoreboard relative flex min-h-0 flex-col overflow-visible p-4 pb-6'
                     : 'dashboard-scoreboard relative flex min-h-0 flex-1 flex-col overflow-hidden p-3 pb-4'
                   : 'dashboard-scoreboard relative p-5'
               }
@@ -765,7 +765,7 @@ export default function LiveDashboard() {
                   lives in a scrollable region (flex-1 + overflow-y-auto) so
                   the expanded cells NEVER collapse the track / metric cards;
                   in Normal mode it follows standard document flow. */}
-              <div className={isTv ? 'mt-3 min-h-0 flex-1 overflow-y-auto pr-1' : 'mt-4'}>
+              <div className={isTv ? (showAllShifts ? 'mt-3' : 'mt-3 min-h-0 flex-1 overflow-y-auto pr-1') : 'mt-4'}>
                 {showAllShifts ? (
                   <div className="grid gap-2 sm:grid-cols-2 lg:grid-cols-5">
                   {data.hourly.map((h, i) => (
