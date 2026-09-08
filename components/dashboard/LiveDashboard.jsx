@@ -743,7 +743,7 @@ export default function LiveDashboard() {
               </div>
 
               {/* Bottom strip: total + toggle - fixed, never compressed */}
-              <div className="mt-4 flex shrink-0 flex-wrap items-center gap-3">
+              <div className="mt-4 mb-4 flex shrink-0 flex-wrap items-center gap-3">
                 <span className="sb-total-pill">
                   Day total: <FlipNumber value={data.actualQty} digits={4} />
                 </span>
