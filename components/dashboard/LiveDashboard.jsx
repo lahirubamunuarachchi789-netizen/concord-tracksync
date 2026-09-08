@@ -793,7 +793,9 @@ export default function LiveDashboard() {
           <section
             className={
               isTv
-                ? 'grid shrink-0 grid-cols-3 gap-3'
+                ? showAllShifts
+                  ? 'mt-4 grid shrink-0 grid-cols-3 gap-3'
+                  : 'grid shrink-0 grid-cols-3 gap-3'
                 : 'grid gap-4 sm:grid-cols-3'
             }
           >
@@ -814,16 +816,30 @@ export default function LiveDashboard() {
                 key={label}
                 className={
                   isTv
-                    ? 'flex min-w-0 items-center gap-3 rounded-2xl bg-white px-4 py-3 shadow-sm ring-1 ring-slate-200'
+                    ? 'flex min-w-0 items-center gap-2 rounded-2xl bg-white px-3 py-1.5 shadow-sm ring-1 ring-slate-200'
                     : 'flex items-center gap-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200'
                 }
               >
-                <span className="shrink-0 rounded-xl bg-indigo-50 p-2.5 text-indigo-600">
-                  <Icon className="h-5 w-5" />
+                <span
+                  className={
+                    isTv
+                      ? 'shrink-0 rounded-lg bg-indigo-50 p-1.5 text-indigo-600'
+                      : 'shrink-0 rounded-xl bg-indigo-50 p-2.5 text-indigo-600'
+                  }
+                >
+                  <Icon className={isTv ? 'h-4 w-4' : 'h-5 w-5'} />
                 </span>
                 <div className="min-w-0">
                   <p className="truncate text-[10px] font-medium text-slate-400">{label}</p>
-                  <p className="truncate text-xl font-extrabold text-slate-900">{value}</p>
+                  <p
+                    className={
+                      isTv
+                        ? 'truncate text-lg font-extrabold text-slate-900'
+                        : 'truncate text-xl font-extrabold text-slate-900'
+                    }
+                  >
+                    {value}
+                  </p>
                 </div>
               </div>
             ))}
