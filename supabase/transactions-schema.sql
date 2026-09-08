@@ -74,7 +74,8 @@ create policy "tracksync_msk_select"
   using (true);
 
 --    b) data_updates: transactions are append-only (no update /
---       delete policies by design).
+--       delete policies by design). EXCEPTION: the session-scoped
+--       "Recent transactions" deletion below - see policy (c).
 drop policy if exists "tracksync_data_updates_insert" on data_updates;
 create policy "tracksync_data_updates_insert"
   on data_updates for insert
@@ -84,6 +85,17 @@ create policy "tracksync_data_updates_insert"
 drop policy if exists "tracksync_data_updates_select" on data_updates;
 create policy "tracksync_data_updates_select"
   on data_updates for select
+  to anon, authenticated
+  using (true);
+
+--    c) data_updates: session log deletion - the bin icon on the
+--       "Recent transactions" log of the Standard Transactions page
+--       deletes THIS SESSION's scan records from data_updates (and the
+--       QR Activation cascade reuses the same table). Without this
+--       policy RLS silently blocks every DELETE from the browser.
+drop policy if exists "tracksync_data_updates_delete" on data_updates;
+create policy "tracksync_data_updates_delete"
+  on data_updates for delete
   to anon, authenticated
   using (true);
 

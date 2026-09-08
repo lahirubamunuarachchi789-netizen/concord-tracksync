@@ -5,7 +5,8 @@
 // parameters, queue health and the recent activation log.
 // ============================================================
 
-import { CheckIcon, RefreshIcon, SpinnerIcon, XCircleIcon } from '@/components/icons';
+import { useEffect, useState } from 'react';
+import { CheckIcon, RefreshIcon, SpinnerIcon, TrashIcon, XCircleIcon } from '@/components/icons';
 import { StatusChip } from '../TransactionSummary';
 
 export default function ActivationSummary({
@@ -16,7 +17,22 @@ export default function ActivationSummary({
   queuedCount,
   onRetrySync,
   syncing,
+  onDeleteActivation,
+  deletingKey,
 }) {
+  // Two-step row deletion (bin icon): the first click arms the button
+  // ("Confirm?"), the second click deletes. Disarms automatically after
+  // 3s or when another row is armed - mirrors the PO delete pattern.
+  const [confirmKey, setConfirmKey] = useState(null);
+  useEffect(() => {
+    if (!confirmKey) return undefined;
+    const timer = setTimeout(() => setConfirmKey(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmKey]);
+
+  // Stable key for a history row - matches the view's activationRowKey.
+  const rowKeyOf = (row) => row?.id ?? `${row?.qr_code ?? ''}|${row?.created_at ?? ''}`;
+
   return (
     <div className="flex flex-col gap-4">
       {/* Active workflow */}
@@ -189,59 +205,90 @@ export default function ActivationSummary({
         <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
           {history.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-slate-400">
-              Activated QR codes will appear here.
+              QR codes activated in this session will appear here.
             </p>
           ) : (
-            history.map((row, index) => (
-              <div
-                key={row.id ?? `${row.created_at}-${index}`}
-                className="flex items-start gap-3 px-5 py-3.5"
-              >
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-sm font-semibold text-slate-900">
-                    {row.qr_code}
-                  </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5">
-                    {row.record_status ? (
-                      <StatusChip tone="emerald">{row.record_status}</StatusChip>
-                    ) : null}
-                    {row.qc_status ? <StatusChip tone="amber">{row.qc_status}</StatusChip> : null}
-                    {row.count != null ? (
-                      <span
-                        className={`rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
-                          row.count < 0
-                            ? 'bg-red-50 text-red-600 ring-red-100'
-                            : 'bg-slate-50 text-slate-600 ring-slate-200'
-                        }`}
-                      >
-                        {row.count > 0 ? `+${row.count}` : row.count}
+            history.map((row) => {
+              const rowKey = rowKeyOf(row);
+              const confirming = confirmKey === rowKey;
+              const deleting = deletingKey === rowKey;
+              return (
+                <div
+                  key={rowKey}
+                  className="flex items-start gap-3 px-5 py-3.5"
+                >
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-sm font-semibold text-slate-900">
+                      {row.qr_code}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                      {row.record_status ? (
+                        <StatusChip tone="emerald">{row.record_status}</StatusChip>
+                      ) : null}
+                      {row.qc_status ? <StatusChip tone="amber">{row.qc_status}</StatusChip> : null}
+                      {row.count != null ? (
+                        <span
+                          className={`rounded-full px-2 py-0.5 text-[11px] font-bold ring-1 ${
+                            row.count < 0
+                              ? 'bg-red-50 text-red-600 ring-red-100'
+                              : 'bg-slate-50 text-slate-600 ring-slate-200'
+                          }`}
+                        >
+                          {row.count > 0 ? `+${row.count}` : row.count}
+                        </span>
+                      ) : null}
+                      <span className="text-[11px] text-slate-400">
+                        {new Date(row.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {' · '}
+                        {row.created_by}
                       </span>
-                    ) : null}
-                    <span className="text-[11px] text-slate-400">
-                      {new Date(row.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {' · '}
-                      {row.created_by}
-                    </span>
-                  </p>
+                    </p>
+                  </div>
+                  {row._source === 'queued' ? (
+                    <StatusChip tone="amber">
+                      <RefreshIcon className="h-3 w-3" /> Queued
+                    </StatusChip>
+                  ) : row._source === 'failed' ? (
+                    <StatusChip tone="red">
+                      <XCircleIcon className="h-3 w-3" /> Failed
+                    </StatusChip>
+                  ) : (
+                    <StatusChip tone="emerald">
+                      <CheckIcon className="h-3 w-3" /> Synced
+                    </StatusChip>
+                  )}
+                  {onDeleteActivation ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        confirming ? onDeleteActivation(row) : setConfirmKey(rowKey)
+                      }
+                      disabled={Boolean(deletingKey)}
+                      aria-label={
+                        confirming ? 'Confirm delete activation' : 'Delete activation'
+                      }
+                      title={
+                        confirming ? 'Click again to confirm' : 'Delete this activation'
+                      }
+                      className={`mt-0.5 shrink-0 rounded-lg p-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        confirming
+                          ? 'bg-red-600 text-white shadow-sm'
+                          : 'text-slate-300 hover:bg-red-50 hover:text-red-600'
+                      }`}
+                    >
+                      {deleting ? (
+                        <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <TrashIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  ) : null}
                 </div>
-                {row._source === 'queued' ? (
-                  <StatusChip tone="amber">
-                    <RefreshIcon className="h-3 w-3" /> Queued
-                  </StatusChip>
-                ) : row._source === 'failed' ? (
-                  <StatusChip tone="red">
-                    <XCircleIcon className="h-3 w-3" /> Failed
-                  </StatusChip>
-                ) : (
-                  <StatusChip tone="emerald">
-                    <CheckIcon className="h-3 w-3" /> Synced
-                  </StatusChip>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </section>

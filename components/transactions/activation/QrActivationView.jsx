@@ -38,13 +38,13 @@ import {
   buildQrCode,
   createActivation,
   checkDownstreamNetCount,
+  deleteActivationRecord,
   evaluateCutQtyLimit,
   fetchCutQtyForPoSize,
   fetchMqcForPo,
   fetchSrlSizeForBoxCode,
   getActivatedCountSum,
   getQueuedActivationCount,
-  getRecentActivations,
   innerQrExistsInDataUpdates,
   retryQueuedActivations,
 } from '@/lib/qrActivationService';
@@ -93,6 +93,9 @@ export default function QrActivationView() {
   // database writes: { title, message } | null. Stays open until the
   // user dismisses it with "OK".
   const [errorModal, setErrorModal] = useState(null);
+  // Key of the Recent Activations row currently being deleted (a
+  // bin-icon click) - null when no deletion is in flight.
+  const [deletingRef, setDeletingRef] = useState(null);
 
   // Refs keep the stable scan callback free of stale closures.
   const paramsRef = useRef(params);
@@ -170,9 +173,12 @@ export default function QrActivationView() {
   /* ------------------------- initial load -------------------------- */
 
   const refresh = useCallback(async () => {
+    // SESSION-SCOPED LOG: the Recent Activations list starts EMPTY on
+    // entry - historical data_updates rows (previous sessions or other
+    // users) are NEVER fetched here. Only the offline queue is flushed
+    // so previous-session scans still reach Supabase; the on-screen log
+    // grows exclusively from this session's new activations.
     const { flushed, skipped } = await retryQueuedActivations();
-    const rows = await getRecentActivations(25);
-    setHistory(rows);
     setQueuedCount(getQueuedActivationCount());
     return { flushed, skipped };
   }, []);
@@ -482,6 +488,42 @@ export default function QrActivationView() {
     );
   }
 
+  /* ------------------ deletion (bin icon per row) ------------------ */
+
+  // Stable key for a history row (the payload fields are unique per
+  // scan - created_at is the client-side scan timestamp).
+  function activationRowKey(row) {
+    return row?.id ?? `${row?.qr_code ?? ''}|${row?.created_at ?? ''}`;
+  }
+
+  async function handleDeleteActivation(row) {
+    const key = activationRowKey(row);
+    if (!key || deletingRef) return; // one deletion at a time
+    setDeletingRef(key);
+    // Multi-table cascade: the data_updates record is deleted AND the
+    // msk activation marking (org_qr = the formatted qr_code) is
+    // reverted - status restored to 'Packed', then the marking row is
+    // cleared so the shoe can be activated again.
+    const result = await deleteActivationRecord(row);
+    setDeletingRef(null);
+    if (!result.ok) {
+      // Centered blocking modal - the row stays in the list for a retry.
+      notify(
+        'error',
+        'Delete failed',
+        result.error ||
+          'The activation could not be deleted. Nothing was changed.'
+      );
+      return;
+    }
+    setHistory((prev) => prev.filter((item) => activationRowKey(item) !== key));
+    notify(
+      'success',
+      'Activation deleted',
+      `${row?.qr_code || 'The record'} was removed from data_updates and its msk activation mark was reset.`
+    );
+  }
+
   const ready = Boolean(params.po && params.size && params.record && params.qc);
 
   return (
@@ -618,6 +660,8 @@ export default function QrActivationView() {
             queuedCount={queuedCount}
             onRetrySync={handleRetrySync}
             syncing={syncing}
+            onDeleteActivation={handleDeleteActivation}
+            deletingKey={deletingRef}
           />
         </div>
       </div>

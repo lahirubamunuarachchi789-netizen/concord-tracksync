@@ -126,9 +126,23 @@ create policy "tracksync_du_select"
   to anon, authenticated
   using (true);
 
+-- data_updates delete: the bin icon on the "Recent activations" log
+-- deletes THIS SESSION's activation records from data_updates (part 1
+-- of the deletion cascade). Without this policy RLS silently blocks
+-- every DELETE from the browser.
+drop policy if exists "tracksync_du_delete" on data_updates;
+create policy "tracksync_du_delete"
+  on data_updates for delete
+  to anon, authenticated
+  using (true);
+
 -- msk: the duplicate guard is read on every scan and written on
--- every valid activation. No delete/update from the browser by
--- design (deactivating a QR is a manual DB operation).
+-- every valid activation. The deletion cascade reverts the mark:
+--   update -> restore the lifecycle status of the marking row to
+--             'Packed' (non-fatal on tables without the column),
+--   delete -> clear the marking row (msk.org_qr = formatted qr_code)
+--             so the org_qr duplicate guard no longer blocks a fresh
+--             activation.
 drop policy if exists "tracksync_msk_select" on msk;
 create policy "tracksync_msk_select"
   on msk for select
@@ -140,6 +154,19 @@ create policy "tracksync_msk_insert"
   on msk for insert
   to anon, authenticated
   with check (true);
+
+drop policy if exists "tracksync_msk_update" on msk;
+create policy "tracksync_msk_update"
+  on msk for update
+  to anon, authenticated
+  using (true)
+  with check (true);
+
+drop policy if exists "tracksync_msk_delete" on msk;
+create policy "tracksync_msk_delete"
+  on msk for delete
+  to anon, authenticated
+  using (true);
 
 -- ============================================================
 -- NOTES

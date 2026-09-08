@@ -20,8 +20,8 @@ import StatusControls from './StatusControls';
 import TransactionSummary, { StatusChip } from './TransactionSummary';
 import {
   createTransaction,
+  deleteTransactionRecord,
   getQueuedCount,
-  getRecentTransactions,
   retryQueuedTransactions,
   validateStandardTransactionScan,
   resolveOrgQrFromInnerBox,
@@ -67,6 +67,9 @@ export default function TransactionsView() {
   // database writes: { title, message } | null. Stays open until the
   // user dismisses it with "OK".
   const [errorModal, setErrorModal] = useState(null);
+  // Key of the Recent Transactions row currently being deleted (a
+  // bin-icon click) - null when no deletion is in flight.
+  const [deletingRef, setDeletingRef] = useState(null);
 
   // Dual-Scan state (Finishing departments): which scan is expected
   // next and the Inner Box QR captured in scan 1 of 2.
@@ -147,10 +150,13 @@ export default function TransactionsView() {
   useEffect(() => {
     let cancelled = false;
     (async () => {
+      // SESSION-SCOPED LOG: the Recent Transactions list starts EMPTY
+      // on entry - historical data_updates rows (previous sessions or
+      // other users) are NEVER fetched here. Only the offline queue is
+      // flushed so previous-session scans still reach Supabase; the
+      // on-screen log grows exclusively from this session's new scans.
       const { flushed } = await retryQueuedTransactions();
-      const rows = await getRecentTransactions(25);
       if (cancelled) return;
-      setHistory(rows);
       setQueuedCount(getQueuedCount());
       if (flushed > 0) {
         notify('success', 'Sync complete', `${flushed} offline transaction(s) uploaded.`);
@@ -166,8 +172,6 @@ export default function TransactionsView() {
     async function retry() {
       setSyncing(true);
       const { flushed } = await retryQueuedTransactions();
-      const rows = await getRecentTransactions(25);
-      setHistory(rows);
       setQueuedCount(getQueuedCount());
       setSyncing(false);
       if (flushed > 0) {
@@ -374,9 +378,10 @@ export default function TransactionsView() {
   function handleRetrySync() {
     setSyncing(true);
     (async () => {
+      // SESSION-SCOPED LOG: syncing only flushes the offline queue - the
+      // on-screen log is never reloaded from data_updates, so entries
+      // deleted earlier in this session are never re-imported.
       const { flushed } = await retryQueuedTransactions();
-      const rows = await getRecentTransactions(25);
-      setHistory(rows);
       setQueuedCount(getQueuedCount());
       setSyncing(false);
       notify(
@@ -387,6 +392,36 @@ export default function TransactionsView() {
           : 'All transactions are already up to date.'
       );
     })();
+  }
+
+  /* ------------------ deletion (bin icon per row) ------------------ */
+
+  // Stable key for a history row (client_ref for in-session rows,
+  // composite fallback for anything without one).
+  function historyRowKey(tx) {
+    return tx?.client_ref ?? `${tx?.qr_code ?? ''}|${tx?.created_at ?? ''}`;
+  }
+
+  async function handleDeleteTransaction(tx) {
+    const key = historyRowKey(tx);
+    if (!key || deletingRef) return; // one deletion at a time
+    setDeletingRef(key);
+    // Deletes the data_updates record (by id or exact composite match)
+    // and drops any pending offline copy of the scan from the queue.
+    const result = await deleteTransactionRecord(tx);
+    setDeletingRef(null);
+    if (!result.ok) {
+      // Centered blocking modal - the row stays in the list for a retry.
+      notify(
+        'error',
+        'Delete failed',
+        result.error ||
+          'The transaction could not be deleted from data_updates. Nothing was changed.'
+      );
+      return;
+    }
+    setHistory((prev) => prev.filter((item) => historyRowKey(item) !== key));
+    notify('success', 'Transaction deleted', `${tx?.qr_code || 'The record'} was removed from data_updates.`);
   }
 
   return (
@@ -521,6 +556,8 @@ export default function TransactionsView() {
             queuedCount={queuedCount}
             onRetrySync={handleRetrySync}
             syncing={syncing}
+            onDeleteTransaction={handleDeleteTransaction}
+            deletingKey={deletingRef}
           />
         </div>
       </div>

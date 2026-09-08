@@ -5,7 +5,8 @@
 // and the live session log with per-row sync state.
 // ============================================================
 
-import { CheckIcon, RefreshIcon, SpinnerIcon, XCircleIcon } from '@/components/icons';
+import { useEffect, useState } from 'react';
+import { CheckIcon, RefreshIcon, SpinnerIcon, TrashIcon, XCircleIcon } from '@/components/icons';
 
 const QC_TONES = {
   Forward: 'emerald',
@@ -42,7 +43,22 @@ export default function TransactionSummary({
   queuedCount,
   onRetrySync,
   syncing,
+  onDeleteTransaction,
+  deletingKey,
 }) {
+  // Two-step row deletion (bin icon): the first click arms the button
+  // ("Confirm?"), the second click deletes. Disarms automatically after
+  // 3s or when another row is armed - mirrors the PO delete pattern.
+  const [confirmKey, setConfirmKey] = useState(null);
+  useEffect(() => {
+    if (!confirmKey) return undefined;
+    const timer = setTimeout(() => setConfirmKey(null), 3000);
+    return () => clearTimeout(timer);
+  }, [confirmKey]);
+
+  // Stable key for a history row - matches the view's historyRowKey.
+  const rowKeyOf = (tx) => tx?.client_ref ?? `${tx?.qr_code ?? ''}|${tx?.created_at ?? ''}`;
+
   return (
     <div className="flex flex-col gap-4">
       {/* Active workflow */}
@@ -130,50 +146,81 @@ export default function TransactionSummary({
         <div className="max-h-80 divide-y divide-slate-100 overflow-y-auto">
           {history.length === 0 ? (
             <p className="px-5 py-8 text-center text-sm text-slate-400">
-              Recorded transactions will appear here.
+              Transactions recorded in this session will appear here.
             </p>
           ) : (
-            history.map((tx) => (
-              <div key={tx.client_ref} className="flex items-start gap-3 px-5 py-3.5">
-                <div className="min-w-0 flex-1">
-                  <p className="truncate font-mono text-sm font-semibold text-slate-900">
-                    {tx.qr_code}
-                  </p>
-                  <p className="mt-1 flex flex-wrap items-center gap-1.5">
-                    <StatusChip tone={tx.record_status === 'IN' ? 'emerald' : 'indigo'}>
-                      {tx.record_status}
+            history.map((tx) => {
+              const rowKey = rowKeyOf(tx);
+              const confirming = confirmKey === rowKey;
+              const deleting = deletingKey === rowKey;
+              return (
+                <div key={rowKey} className="flex items-start gap-3 px-5 py-3.5">
+                  <div className="min-w-0 flex-1">
+                    <p className="truncate font-mono text-sm font-semibold text-slate-900">
+                      {tx.qr_code}
+                    </p>
+                    <p className="mt-1 flex flex-wrap items-center gap-1.5">
+                      <StatusChip tone={tx.record_status === 'IN' ? 'emerald' : 'indigo'}>
+                        {tx.record_status}
+                      </StatusChip>
+                      <StatusChip tone={QC_TONES[tx.qc_status] || 'slate'}>
+                        {tx.qc_status}
+                      </StatusChip>
+                      <StatusChip tone={tx.count < 0 ? 'red' : 'emerald'}>
+                        {tx.count > 0 ? `+${tx.count}` : tx.count}
+                      </StatusChip>
+                      <span className="text-[11px] text-slate-400">
+                        {new Date(tx.created_at).toLocaleTimeString([], {
+                          hour: '2-digit',
+                          minute: '2-digit',
+                        })}
+                        {' · '}
+                        {tx.created_by}
+                      </span>
+                    </p>
+                  </div>
+                  {tx._source === 'queued' ? (
+                    <StatusChip tone="amber">
+                      <RefreshIcon className="h-3 w-3" /> Queued
                     </StatusChip>
-                    <StatusChip tone={QC_TONES[tx.qc_status] || 'slate'}>
-                      {tx.qc_status}
+                  ) : tx._source === 'failed' ? (
+                    <StatusChip tone="red">
+                      <XCircleIcon className="h-3 w-3" /> Failed
                     </StatusChip>
-                    <StatusChip tone={tx.count < 0 ? 'red' : 'emerald'}>
-                      {tx.count > 0 ? `+${tx.count}` : tx.count}
+                  ) : (
+                    <StatusChip tone="emerald">
+                      <CheckIcon className="h-3 w-3" /> Synced
                     </StatusChip>
-                    <span className="text-[11px] text-slate-400">
-                      {new Date(tx.created_at).toLocaleTimeString([], {
-                        hour: '2-digit',
-                        minute: '2-digit',
-                      })}
-                      {' · '}
-                      {tx.created_by}
-                    </span>
-                  </p>
+                  )}
+                  {onDeleteTransaction ? (
+                    <button
+                      type="button"
+                      onClick={() =>
+                        confirming ? onDeleteTransaction(tx) : setConfirmKey(rowKey)
+                      }
+                      disabled={Boolean(deletingKey)}
+                      aria-label={
+                        confirming ? 'Confirm delete transaction' : 'Delete transaction'
+                      }
+                      title={
+                        confirming ? 'Click again to confirm' : 'Delete this transaction'
+                      }
+                      className={`mt-0.5 shrink-0 rounded-lg p-1.5 transition focus:outline-none focus-visible:ring-2 focus-visible:ring-red-400 disabled:cursor-not-allowed disabled:opacity-50 ${
+                        confirming
+                          ? 'bg-red-600 text-white shadow-sm'
+                          : 'text-slate-300 hover:bg-red-50 hover:text-red-600'
+                      }`}
+                    >
+                      {deleting ? (
+                        <SpinnerIcon className="h-3.5 w-3.5 animate-spin" />
+                      ) : (
+                        <TrashIcon className="h-3.5 w-3.5" />
+                      )}
+                    </button>
+                  ) : null}
                 </div>
-                {tx._source === 'queued' ? (
-                  <StatusChip tone="amber">
-                    <RefreshIcon className="h-3 w-3" /> Queued
-                  </StatusChip>
-                ) : tx._source === 'failed' ? (
-                  <StatusChip tone="red">
-                    <XCircleIcon className="h-3 w-3" /> Failed
-                  </StatusChip>
-                ) : (
-                  <StatusChip tone="emerald">
-                    <CheckIcon className="h-3 w-3" /> Synced
-                  </StatusChip>
-                )}
-              </div>
-            ))
+              );
+            })
           )}
         </div>
       </section>
