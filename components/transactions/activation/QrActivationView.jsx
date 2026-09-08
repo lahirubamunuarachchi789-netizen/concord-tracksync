@@ -31,6 +31,7 @@ import InnerBoxQrField from '../InnerBoxQrField';
 import ScanMethodToggle from '../ScanMethodToggle';
 import ScanPreview from '../ScanPreview';
 import StatusControls from '../StatusControls';
+import ManualDateTimeSection from '../ManualDateTimeSection';
 import ActivationSummary from './ActivationSummary';
 import PoSelect from './PoSelect';
 import SizeSelect from './SizeSelect';
@@ -80,6 +81,10 @@ export default function QrActivationView() {
   // Locked scan parameters: PO, size and record/QC statuses persist
   // across scans AND reloads until the user manually changes them.
   const [params, setParams] = useState({ po: '', size: '', record: '', qc: '' });
+  // Manual Date & Time override: { enabled, value } where `value` is a
+  // "YYYY-MM-DDTHH:mm" datetime-local string. OFF by default so every
+  // activation records with the CURRENT system time (new Date()).
+  const [manualTime, setManualTime] = useState({ enabled: false, value: '' });
   const [lastScan, setLastScan] = useState(null);
   const [attention, setAttention] = useState(false);
   const [pending, setPending] = useState(0);
@@ -104,6 +109,8 @@ export default function QrActivationView() {
   userRef.current = user;
   const lastScanRef = useRef(null);
   lastScanRef.current = lastScan;
+  const manualTimeRef = useRef(manualTime);
+  manualTimeRef.current = manualTime;
   const errorModalRef = useRef(errorModal);
   errorModalRef.current = errorModal;
 
@@ -153,22 +160,35 @@ export default function QrActivationView() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(PARAMS_KEY) || '{}');
-      if (saved.po || saved.size || saved.record || saved.qc) {
-        setParams((prev) => ({ ...prev, ...saved }));
+      const { manualEnabled, manualValue, ...savedParams } = saved;
+      if (savedParams.po || savedParams.size || savedParams.record || savedParams.qc) {
+        setParams((prev) => ({ ...prev, ...savedParams }));
       }
+      setManualTime((prev) => ({
+        enabled: Boolean(manualEnabled),
+        value: typeof manualValue === 'string' ? manualValue : prev.value,
+      }));
     } catch {
       /* ignore corrupt storage */
     }
   }, []);
 
-  // Persist locked parameters across scans AND reloads.
+  // Persist locked parameters + the manual date/time override across
+  // scans AND reloads.
   useEffect(() => {
     try {
-      localStorage.setItem(PARAMS_KEY, JSON.stringify(params));
+      localStorage.setItem(
+        PARAMS_KEY,
+        JSON.stringify({
+          ...params,
+          manualEnabled: manualTime.enabled,
+          manualValue: manualTime.value,
+        })
+      );
     } catch {
       /* storage unavailable - in-memory selection still works */
     }
-  }, [params]);
+  }, [params, manualTime]);
 
   /* ------------------------- initial load -------------------------- */
 
@@ -410,7 +430,26 @@ export default function QrActivationView() {
 
   async function autoActivate(code, po, size, record, qc, innerQr = null) {
     setPending((n) => n + 1);
-    const result = await createActivation(userRef.current, code, po, size, record, qc, innerQr);
+    // When the Manual Date & Time toggle is on, its value is carried as
+    // the activation's created_at; off (or an unparseable picker) falls
+    // back to the current system time.
+    let createdAtOverride = null;
+    if (manualTimeRef.current?.enabled && manualTimeRef.current?.value) {
+      const manualDate = new Date(manualTimeRef.current.value);
+      if (!Number.isNaN(manualDate.getTime())) {
+        createdAtOverride = manualDate.toISOString();
+      }
+    }
+    const result = await createActivation(
+      userRef.current,
+      code,
+      po,
+      size,
+      record,
+      qc,
+      innerQr,
+      createdAtOverride
+    );
     setPending((n) => Math.max(0, n - 1));
 
     if (result.status === 'blocked') {
@@ -617,6 +656,15 @@ export default function QrActivationView() {
             attention={attention}
             onRecord={(record) => setParams((prev) => ({ ...prev, record }))}
             onQc={(qc) => setParams((prev) => ({ ...prev, qc }))}
+          />
+
+          {/* Optional Manual Date & Time override: hides the inputs and
+              falls back to the current system time when off. */}
+          <ManualDateTimeSection
+            enabled={manualTime.enabled}
+            value={manualTime.value}
+            onToggle={(enabled) => setManualTime((prev) => ({ ...prev, enabled }))}
+            onValueChange={(value) => setManualTime((prev) => ({ ...prev, value }))}
           />
 
           {/* Workflow status strip: readiness + live activation indicator */}

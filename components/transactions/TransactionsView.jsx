@@ -17,6 +17,7 @@ import InnerBoxQrField from './InnerBoxQrField';
 import ScanMethodToggle from './ScanMethodToggle';
 import ScanPreview from './ScanPreview';
 import StatusControls from './StatusControls';
+import ManualDateTimeSection from './ManualDateTimeSection';
 import TransactionSummary, { StatusChip } from './TransactionSummary';
 import {
   createTransaction,
@@ -56,6 +57,10 @@ export default function TransactionsView() {
   // Locked workflow statuses: pre-selected once, reused for EVERY scan
   // until the user manually changes them. Persisted across reloads too.
   const [statuses, setStatuses] = useState({ record: '', qc: '' });
+  // Manual Date & Time override: { enabled, value } where `value` is a
+  // "YYYY-MM-DDTHH:mm" datetime-local string. OFF by default so every
+  // scan records with the CURRENT system time (new Date()).
+  const [manualTime, setManualTime] = useState({ enabled: false, value: '' });
   const [lastScan, setLastScan] = useState(null); // { value, source, at, result }
   const [attention, setAttention] = useState(false); // flash when a scan is blocked
   const [pending, setPending] = useState(0); // auto-submissions in flight
@@ -85,6 +90,8 @@ export default function TransactionsView() {
   userRef.current = user;
   const lastScanRef = useRef(null);
   lastScanRef.current = lastScan;
+  const manualTimeRef = useRef(manualTime);
+  manualTimeRef.current = manualTime;
   const dualScanRef = useRef(dualScan);
   dualScanRef.current = dualScan;
   const errorModalRef = useRef(errorModal);
@@ -130,20 +137,35 @@ export default function TransactionsView() {
   useEffect(() => {
     try {
       const saved = JSON.parse(localStorage.getItem(STATUS_KEY) || '{}');
-      if (saved.record || saved.qc) setStatuses((prev) => ({ ...prev, ...saved }));
+      const { manualEnabled, manualValue, ...savedStatuses } = saved;
+      if (savedStatuses.record || savedStatuses.qc) {
+        setStatuses((prev) => ({ ...prev, ...savedStatuses }));
+      }
+      setManualTime((prev) => ({
+        enabled: Boolean(manualEnabled),
+        value: typeof manualValue === 'string' ? manualValue : prev.value,
+      }));
     } catch {
       /* ignore corrupt storage */
     }
   }, []);
 
-  // Persist the locked statuses across scans AND reloads.
+  // Persist the locked statuses + manual date/time override across
+  // scans AND reloads.
   useEffect(() => {
     try {
-      localStorage.setItem(STATUS_KEY, JSON.stringify(statuses));
+      localStorage.setItem(
+        STATUS_KEY,
+        JSON.stringify({
+          ...statuses,
+          manualEnabled: manualTime.enabled,
+          manualValue: manualTime.value,
+        })
+      );
     } catch {
       /* storage unavailable - in-memory selection still works */
     }
-  }, [statuses]);
+  }, [statuses, manualTime]);
 
   /* ------------------------- initial load ------------------------- */
 
@@ -342,8 +364,25 @@ export default function TransactionsView() {
 
     // 2) All guards passed - insert the standard transaction into
     //    data_updates (org_qr as qr_code, inner_qr = Inner Box QR or
-    //    null for single scans).
-    const result = await createTransaction(userRef.current, gate.orgQr, record, qc, innerQr);
+    //    null for single scans). When the Manual Date & Time toggle is
+    //    on, its value is carried as the record's created_at; off (or
+    //    an empty / unparseable picker) falls back to the current
+    //    system time.
+    let createdAtOverride = null;
+    if (manualTimeRef.current?.enabled && manualTimeRef.current?.value) {
+      const manualDate = new Date(manualTimeRef.current.value);
+      if (!Number.isNaN(manualDate.getTime())) {
+        createdAtOverride = manualDate.toISOString();
+      }
+    }
+    const result = await createTransaction(
+      userRef.current,
+      gate.orgQr,
+      record,
+      qc,
+      innerQr,
+      createdAtOverride
+    );
     setPending((n) => Math.max(0, n - 1));
     setHistory((prev) => [result.row, ...prev].slice(0, 25));
     setQueuedCount(getQueuedCount());
@@ -512,6 +551,15 @@ export default function TransactionsView() {
             attention={attention}
             onRecord={(status) => setStatuses((prev) => ({ ...prev, record: status }))}
             onQc={(status) => setStatuses((prev) => ({ ...prev, qc: status }))}
+          />
+
+          {/* Optional Manual Date & Time override: hides the inputs and
+              falls back to the current system time when off. */}
+          <ManualDateTimeSection
+            enabled={manualTime.enabled}
+            value={manualTime.value}
+            onToggle={(enabled) => setManualTime((prev) => ({ ...prev, enabled }))}
+            onValueChange={(value) => setManualTime((prev) => ({ ...prev, value }))}
           />
 
           {/* Workflow status strip: readiness + live recording indicator */}

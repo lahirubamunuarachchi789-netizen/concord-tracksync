@@ -586,6 +586,7 @@ test('Packing scan recorded (net +1): createTransaction marks msk.status = Packe
     'IN',
     'Forward',
     INNER_QR,
+    null,
     client
   );
   assert.equal(result.ok, true);
@@ -626,6 +627,7 @@ test('Packing Return recorded (net 0): createTransaction reverts msk.status = Ac
     'IN',
     'Return',
     null,
+    null,
     client
   );
   assert.equal(result.ok, true);
@@ -649,7 +651,7 @@ test('NON-Packing scan: createTransaction leaves msk.status unchanged', async ()
     data_updates: { data: null, error: null },
   });
   const user = { username: 'nimal', department: 'Finishing 01' };
-  const result = await createTransaction(user, SHOE_ORG, 'IN', 'Forward', null, client);
+  const result = await createTransaction(user, SHOE_ORG, 'IN', 'Forward', null, null, client);
   assert.equal(result.ok, true);
   assert.equal(result.status, 'synced');
   // The trigger was not even attempted: no mskStatus on the result.
@@ -666,7 +668,7 @@ test('Packing scan QUEUED offline: the msk trigger is deferred (record not in th
   const { client, queries } = createMockSupabase({
     data_updates: { data: null, error: { message: 'fetch failed - network down' } },
   });
-  const result = await createTransaction(PACKING_USER, SHOE_ORG, 'IN', 'Forward', null, client);
+  const result = await createTransaction(PACKING_USER, SHOE_ORG, 'IN', 'Forward', null, null, client);
   assert.equal(result.ok, true);
   assert.equal(result.status, 'queued'); // saved on device, flushed later
   assert.equal(result.mskStatus, undefined);

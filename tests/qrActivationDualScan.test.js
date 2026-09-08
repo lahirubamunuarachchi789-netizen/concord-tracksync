@@ -770,6 +770,7 @@ test('activation with a Packed QR: createActivation proceeds and writes both tab
     'IN',
     'Forward',
     null,
+    null,
     client
   );
   assert.equal(result.ok, true);
@@ -804,6 +805,7 @@ test('activation with an Active QR: createActivation blocks with the exact messa
     35,
     'IN',
     'Forward',
+    null,
     null,
     client
   );
@@ -844,6 +846,7 @@ test('activation with a missing msk row: allowed through and writes both tables'
     'IN',
     'Forward',
     null,
+    null,
     client
   );
   // Condition A: the QR does not exist in msk - the activation
@@ -877,6 +880,7 @@ test('activation with an unreachable msk table: fail-safe block, nothing written
     35,
     'IN',
     'Forward',
+    null,
     null,
     client
   );
