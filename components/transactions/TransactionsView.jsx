@@ -421,6 +421,8 @@ export default function TransactionsView() {
       return;
     }
     setHistory((prev) => prev.filter((item) => historyRowKey(item) !== key));
+    // Deleting a queue-only record (never synced) also lowers the offline count.
+    setQueuedCount(getQueuedCount());
     notify('success', 'Transaction deleted', `${tx?.qr_code || 'The record'} was removed from data_updates.`);
   }
 

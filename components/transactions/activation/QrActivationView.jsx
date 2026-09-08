@@ -517,6 +517,8 @@ export default function QrActivationView() {
       return;
     }
     setHistory((prev) => prev.filter((item) => activationRowKey(item) !== key));
+    // Deleting a queue-only record (never synced) also lowers the offline count.
+    setQueuedCount(getQueuedActivationCount());
     notify(
       'success',
       'Activation deleted',

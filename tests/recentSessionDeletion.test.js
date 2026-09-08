@@ -1,12 +1,18 @@
 'use strict';
 
-// Tests for the session-scoped deletion services (Recent Transactions
-// / Recent Activations bin icons):
+// Tests for the verified deletion services behind the Recent
+// Transactions / Recent Activations bin icons:
 //   - lib/transactionsService.js -> deleteTransactionRecord
 //   - lib/qrActivationService.js -> deleteActivationRecord (cascade:
 //     data_updates delete + msk activation-mark revert)
-// A fake Supabase client records every call so the exact table /
-// filter / payload shape can be asserted without network access.
+//
+// KEY REGRESSION COVERED HERE: PostgREST resolves an RLS-blocked or
+// not-found DELETE as HTTP 200 with an EMPTY array (`error` stays
+// null). The services must treat a no-op delete as an explicit failure
+// (ErrorModal in the view) instead of pretending it succeeded.
+//
+// A fake Supabase client records every call and returns the configured
+// { data, error } responses without network access.
 
 import test from 'node:test';
 import assert from 'node:assert/strict';
@@ -25,48 +31,70 @@ import {
 /* ============================== fakes ================================ */
 
 /**
- * Minimal Supabase client double. `delete().eq()` / `delete().match()` /
- * `update().eq()` calls are recorded per table and resolve with the
- * configured errors (supabase-js resolves query failures to
- * { error } instead of throwing - the fakes mirror that).
+ * Minimal supabase-js double. Mirrors the real builder chain:
+ *   delete().eq()/match().select('id') -> Promise<{ data, error }>
+ *   update(patch).eq()                 -> Promise<{ data, error }>
+ * `duDeletedRows` / `mskDeletedRows` simulate what the DELETE returned
+ * (an EMPTY array = the silent RLS-blocked no-op).
  */
-function createFakeClient({ duError = null, mskUpdateError = null, mskDeleteError = null } = {}) {
+function createFakeClient({
+  duError = null,
+  duDeletedRows = [{ id: 42 }],
+  mskUpdateError = null,
+  mskDeleteError = null,
+  mskDeletedRows = [{ id: 9 }],
+} = {}) {
   const calls = {
     duDeleteEq: null,
     duDeleteMatch: null,
+    duSelect: null,
     mskUpdate: null,
     mskDeleteEq: null,
+    mskDeleteSelect: null,
     order: [],
   };
   const dataUpdates = {
-    delete: () => ({
-      eq: (col, value) => {
-        calls.duDeleteEq = { col, value };
-        calls.order.push('du.delete.eq');
-        return Promise.resolve({ error: duError });
-      },
-      match: (match) => {
-        calls.duDeleteMatch = match;
-        calls.order.push('du.delete.match');
-        return Promise.resolve({ error: duError });
-      },
-    }),
+    delete: () => {
+      calls.order.push('du.delete');
+      const builder = {
+        eq: (col, value) => {
+          calls.duDeleteEq = { col, value };
+          return builder;
+        },
+        match: (match) => {
+          calls.duDeleteMatch = match;
+          return builder;
+        },
+        select: (columns) => {
+          calls.duSelect = columns;
+          return Promise.resolve({ data: duDeletedRows, error: duError });
+        },
+      };
+      return builder;
+    },
   };
   const msk = {
     update: (patch) => ({
       eq: (col, value) => {
         calls.mskUpdate = { patch, col, value };
-        calls.order.push('msk.update.eq');
-        return Promise.resolve({ error: mskUpdateError });
+        calls.order.push('msk.update');
+        return Promise.resolve({ data: [], error: mskUpdateError });
       },
     }),
-    delete: () => ({
-      eq: (col, value) => {
-        calls.mskDeleteEq = { col, value };
-        calls.order.push('msk.delete.eq');
-        return Promise.resolve({ error: mskDeleteError });
-      },
-    }),
+    delete: () => {
+      calls.order.push('msk.delete');
+      const builder = {
+        eq: (col, value) => {
+          calls.mskDeleteEq = { col, value };
+          return builder;
+        },
+        select: (columns) => {
+          calls.mskDeleteSelect = columns;
+          return Promise.resolve({ data: mskDeletedRows, error: mskDeleteError });
+        },
+      };
+      return builder;
+    },
   };
   return {
     calls,
@@ -93,22 +121,22 @@ const TX_ROW = {
   created_at: '2026-09-08T04:15:30.123Z',
 };
 
-
 /* ==================== standard transaction delete ==================== */
 
-test('deleteTransactionRecord: uses the data_updates primary key when the row carries an id', async () => {
+test('deleteTransactionRecord: deletes by the data_updates primary key and verifies the response', async () => {
   const client = createFakeClient();
   const result = await deleteTransactionRecord({ ...TX_ROW }, client);
-  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(result, { ok: true, deleted: 1 });
   assert.deepEqual(client.calls.duDeleteEq, { col: 'id', value: 42 });
   assert.equal(client.calls.duDeleteMatch, null);
+  assert.equal(client.calls.duSelect, 'id');
 });
 
 test('deleteTransactionRecord: in-session rows (no id) delete by the exact composite match', async () => {
   const client = createFakeClient();
   const { id, ...noIdRow } = TX_ROW;
   const result = await deleteTransactionRecord(noIdRow, client);
-  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(result, { ok: true, deleted: 1 });
   assert.equal(client.calls.duDeleteEq, null);
   assert.deepEqual(client.calls.duDeleteMatch, {
     qr_code: TX_ROW.qr_code,
@@ -122,11 +150,23 @@ test('deleteTransactionRecord: in-session rows (no id) delete by the exact compo
   });
 });
 
-test('deleteTransactionRecord: a Supabase error resolves to { ok: false, error } without throwing', async () => {
+test('deleteTransactionRecord: a database error is surfaced as an explicit failure', async () => {
   const client = createFakeClient({ duError: { message: 'permission denied' } });
   const result = await deleteTransactionRecord(TX_ROW, client);
   assert.equal(result.ok, false);
+  assert.match(result.error, /Could not delete the transaction from data_updates/);
   assert.match(result.error, /permission denied/);
+});
+
+test('deleteTransactionRecord: a SILENT NO-OP delete (RLS-blocked, 0 rows) is an explicit failure', async () => {
+  // THE regression: PostgREST returns 200 with an empty array and
+  // error = null when RLS blocks the DELETE - the service must NOT
+  // report success while the database record survives.
+  const client = createFakeClient({ duDeletedRows: [] });
+  const result = await deleteTransactionRecord(TX_ROW, client);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /No matching data_updates record was deleted/);
+  assert.match(result.error, /DELETE policy/);
 });
 
 test('deleteTransactionRecord: never touches tables other than data_updates', async () => {
@@ -138,52 +178,73 @@ test('deleteTransactionRecord: never touches tables other than data_updates', as
 
 /* ==================== activation cascade delete ====================== */
 
-test('deleteActivationRecord: full cascade - data_updates row deleted, msk status restored, mark cleared', async () => {
+test('deleteActivationRecord: full cascade - verified data_updates delete, msk status restore, mark cleared', async () => {
   const client = createFakeClient();
   const result = await deleteActivationRecord(TX_ROW, client);
-  assert.deepEqual(result, { ok: true });
-  // 1. The activation record is deleted from data_updates (by id here).
+  assert.deepEqual(result, { ok: true, deleted: 1 });
+  // 1. The activation record is deleted from data_updates by its id...
   assert.deepEqual(client.calls.duDeleteEq, { col: 'id', value: 42 });
-  // 2. msk status restore attempt ('Packed' = the re-activatable status).
+  assert.equal(client.calls.duSelect, 'id');
+  // 2. ...the msk status restore targets the marking row...
   assert.deepEqual(client.calls.mskUpdate, {
     patch: { status: 'Packed' },
     col: 'org_qr',
     value: TX_ROW.qr_code,
   });
-  // 3. The activation marking row is cleared so the duplicate guard
-  //    no longer blocks a fresh activation.
+  // 3. ...and the verified mark delete clears the duplicate guard.
   assert.deepEqual(client.calls.mskDeleteEq, { col: 'org_qr', value: TX_ROW.qr_code });
+  assert.equal(client.calls.mskDeleteSelect, 'id');
   // Strict order: record first, then the msk revert.
-  assert.deepEqual(client.calls.order, ['du.delete.eq', 'msk.update.eq', 'msk.delete.eq']);
+  assert.deepEqual(client.calls.order, ['du.delete', 'msk.update', 'msk.delete']);
 });
 
 test('deleteActivationRecord: rows without an id cascade through the composite data_updates match', async () => {
   const client = createFakeClient();
   const { id, ...noIdRow } = TX_ROW;
   const result = await deleteActivationRecord(noIdRow, client);
-  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(result, { ok: true, deleted: 1 });
   assert.equal(client.calls.duDeleteEq, null);
   assert.equal(client.calls.duDeleteMatch.created_at, TX_ROW.created_at);
   assert.equal(client.calls.duDeleteMatch.qr_code, TX_ROW.qr_code);
   assert.deepEqual(client.calls.mskDeleteEq, { col: 'org_qr', value: TX_ROW.qr_code });
 });
 
-test('deleteActivationRecord: when the data_updates delete fails the msk revert is SKIPPED and the error surfaces', async () => {
+test('deleteActivationRecord: a data_updates error skips the msk revert and surfaces the error', async () => {
   const client = createFakeClient({ duError: { message: 'row is referenced' } });
   const result = await deleteActivationRecord(TX_ROW, client);
   assert.equal(result.ok, false);
-  assert.match(result.error, /activation record/);
+  assert.match(result.error, /Could not delete the activation record/);
   assert.match(result.error, /row is referenced/);
   assert.equal(client.calls.mskUpdate, null);
   assert.equal(client.calls.mskDeleteEq, null);
 });
 
-test('deleteActivationRecord: a failed msk mark delete fails the whole cascade (ErrorModal in the view)', async () => {
+test('deleteActivationRecord: a SILENT NO-OP data_updates delete (RLS-blocked) is an explicit failure', async () => {
+  // THE regression: 0 rows deleted + no pending offline copy must fail
+  // instead of pretending the cascade succeeded.
+  const client = createFakeClient({ duDeletedRows: [] });
+  const result = await deleteActivationRecord(TX_ROW, client);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /No matching activation record was deleted/);
+  assert.match(result.error, /DELETE policy/);
+});
+
+test('deleteActivationRecord: a failed msk mark delete fails the whole cascade', async () => {
   const client = createFakeClient({ mskDeleteError: { message: 'rls blocked' } });
   const result = await deleteActivationRecord(TX_ROW, client);
   assert.equal(result.ok, false);
-  assert.match(result.error, /msk activation mark/);
+  assert.match(result.error, /Could not reset the msk activation mark/);
   assert.match(result.error, /rls blocked/);
+});
+
+test('deleteActivationRecord: a SILENT NO-OP msk delete fails the cascade when the record existed', async () => {
+  // The data_updates row existed, so its duplicate-guard marking row
+  // must exist too - an empty result means the msk DELETE was blocked.
+  const client = createFakeClient({ mskDeletedRows: [] });
+  const result = await deleteActivationRecord(TX_ROW, client);
+  assert.equal(result.ok, false);
+  assert.match(result.error, /msk activation mark could not be deleted/);
+  assert.match(result.error, /msk DELETE policy/);
 });
 
 test('deleteActivationRecord: the msk status restore is best-effort - a rejected update does not fail the cascade', async () => {
@@ -193,6 +254,8 @@ test('deleteActivationRecord: the msk status restore is best-effort - a rejected
     mskUpdateError: { message: "column 'status' does not exist" },
   });
   const result = await deleteActivationRecord(TX_ROW, client);
-  assert.deepEqual(result, { ok: true });
+  assert.deepEqual(result, { ok: true, deleted: 1 });
   assert.deepEqual(client.calls.mskDeleteEq, { col: 'org_qr', value: TX_ROW.qr_code });
+  assert.equal(client.calls.mskDeleteSelect, 'id');
 });
+
