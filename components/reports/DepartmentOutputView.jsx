@@ -91,6 +91,7 @@ export default function DepartmentOutputView() {
   const [error, setError] = useState(null);
   const [drillDown, setDrillDown] = useState(null);
   const [drillDownLoading, setDrillDownLoading] = useState(false);
+  const [hasSearched, setHasSearched] = useState(false);
 
   useEffect(() => {
     if (!date) setDate(formatSlstDate(new Date()));
@@ -102,16 +103,25 @@ export default function DepartmentOutputView() {
       .catch(() => setDepartments([]));
   }, []);
 
+  // Reset hasSearched when department or date changes
+  useEffect(() => {
+    setHasSearched(false);
+  }, [departmentId, date]);
+
   const runSearch = useCallback(async () => {
     if (!date || !departmentId) return;
     setLoading(true);
     setError(null);
     setHourlyData(null);
     setDrillDown(null);
+    setHasSearched(true);
 
     try {
+      // Compute the full SLST day's UTC bounds [start, end)
       const { start, end } = slstDayUtcBounds(date);
 
+      // Query data_updates for the selected department + date, forward-only.
+      // The department column stores the department NAME (matching departments.department).
       const { data, error: queryError } = await supabase
         .from(DATA_UPDATES_TABLE)
         .select('qr_code, count, created_at')
@@ -123,13 +133,23 @@ export default function DepartmentOutputView() {
 
       if (queryError) throw queryError;
 
+      // Handle empty results - no data found for this department/date
+      if (!data || data.length === 0) {
+        setHourlyData(DEPARTMENT_OUTPUT_HOURS.map((slot) => ({
+          ...slot,
+          totalOutput: 0,
+          scanCount: 0,
+        })));
+        return;
+      }
+
       const slots = DEPARTMENT_OUTPUT_HOURS.map((slot) => ({
         ...slot,
         totalOutput: 0,
         scanCount: 0,
       }));
 
-      for (const row of data || []) {
+      for (const row of data) {
         const createdAt = row?.created_at;
         if (!createdAt) continue;
 
@@ -337,16 +357,17 @@ export default function DepartmentOutputView() {
         </>
       )}
 
-      {/* Empty State */}
+      {/* Empty State / No Data Found */}
       {!hourlyData && !loading && !error && (
         <div className="flex flex-col items-center justify-center rounded-xl border border-dashed border-slate-300 bg-slate-50 py-16 text-center">
           <ClockIcon className="mb-4 h-12 w-12 text-slate-300" />
           <h3 className="text-lg font-semibold text-slate-700">
-            Department Output Report
+            {hasSearched ? 'No Data Found' : 'Department Output Report'}
           </h3>
           <p className="mt-1 max-w-sm text-sm text-slate-500">
-            Select a department and date, then click Search to view the hourly
-            output breakdown.
+            {hasSearched
+              ? `No forward scans found for ${departmentId} on ${date}. Try a different department or date.`
+              : 'Select a department and date, then click Search to view the hourly output breakdown.'}
           </p>
         </div>
       )}
