@@ -4,6 +4,7 @@ import { useState } from 'react';
 import PageHeader from '@/components/PageHeader';
 import PoSummaryView from '@/components/reports/PoSummaryView';
 import DailyOutputView from '@/components/reports/DailyOutputView';
+import DepartmentOutputView from '@/components/reports/DepartmentOutputView';
 
 const TABS = [
   { id: 'po-summary', label: 'PO Summary' },
@@ -46,7 +47,7 @@ export default function ReportsView() {
       {/* Tab Content */}
       <div className="mt-6">{activeTab === 'po-summary' && <PoSummaryView />}</div>
       <div className="mt-6">{activeTab === 'daily-output' && <DailyOutputView />}</div>
-      <div className="mt-6">{activeTab === 'department-output' && <DepartmentOutputPlaceholder />}</div>
+      <div className="mt-6">{activeTab === 'department-output' && <DepartmentOutputView />}</div>
     </div>
   );
 }
@@ -95,20 +96,4 @@ function PoSummaryPlaceholder() {
   );
 }
 
-function DepartmentOutputPlaceholder() {
-  return (
-    <section aria-labelledby="department-output-heading">
-      <h3 id="department-output-heading" className="text-lg font-semibold text-slate-900">
-        Department Output Report
-      </h3>
-      <p className="mt-1 text-sm text-slate-600">
-        Department-specific performance and output tracking.
-      </p>
-      <div className="mt-4 grid gap-4 md:grid-cols-2 lg:grid-cols-3">
-        <PlaceholderCard title="Department Comparison" description="Output side-by-side across departments." badges={['Bar chart']} />
-        <PlaceholderCard title="Efficiency Metrics" description="Efficiency and utilization per department." badges={['KPI cards']} />
-        <PlaceholderCard title="Department Details" description="Drill into a single department's output history." badges={['Table']} />
-      </div>
-    </section>
-  );
-}
+
