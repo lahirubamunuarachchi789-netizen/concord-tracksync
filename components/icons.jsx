@@ -327,3 +327,11 @@ export function PlayIcon(props) {
     </IconBase>
   );
 }
+
+export function ClockIcon(props) {
+  return (
+    <IconBase {...props}>
+      <path d="M12 6v6l4 2m6-2a9 9 0 11-18 0 9 9 0 0118 0z" />
+    </IconBase>
+  );
+}
