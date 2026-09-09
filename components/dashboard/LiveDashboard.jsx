@@ -25,6 +25,7 @@ import {
 import {
   fetchDashboardDepartments,
   fetchLiveDashboard,
+  fetchDashboardDelta,
   ROTATION_INTERVAL_MS,
   DASH_SHIFTS,
   shiftMinutes,
@@ -32,8 +33,11 @@ import {
   filterRotationDepartments,
   loadRotationDepartments,
   saveRotationDepartments,
+  aggregateHourlyOutput,
+  aggregateWeeklyOutput,
+  buildWeekDates,
 } from '@/lib/dashboardService';
-import { formatSlstDate, formatSlstTimestamp } from '@/lib/reportsService';
+import { formatSlstDate, formatSlstTimestamp, slstDayUtcBounds } from '@/lib/reportsService';
 
 /** Live-data refresh cadence while the dashboard is visible (30 seconds). */
 const LIVE_REFRESH_MS = 30000;
@@ -120,6 +124,12 @@ export default function LiveDashboard() {
   const [showDeptSettings, setShowDeptSettings] = useState(false);
   const dateTouched = useRef(false);
 
+  // Delta-fetch tracking: store all loaded week rows and the latest timestamp
+  // so subsequent polls only fetch newly inserted scans (not the full window).
+  const allWeekRowsRef = useRef([]);
+  const maxCreatedAtRef = useRef(null);
+  const isFullLoadDoneRef = useRef(false);
+
   // Restore the persisted department selection (TV displays remember it).
   useEffect(() => {
     setSelectedDepartments(loadRotationDepartments());
@@ -139,22 +149,113 @@ export default function LiveDashboard() {
       .catch(() => setDepartments([]));
   }, [date]);
 
+  /**
+   * Update the max_created_at tracker from a list of scan rows.
+   * Keeps the ref pointing at the latest timestamp we've seen.
+   */
+  const updateMaxCreatedAt = useCallback((rows) => {
+    for (const row of rows || []) {
+      const createdAt = row?.created_at;
+      if (createdAt && (!maxCreatedAtRef.current || createdAt > maxCreatedAtRef.current)) {
+        maxCreatedAtRef.current = createdAt;
+      }
+    }
+  }, []);
+
+  /**
+   * Re-aggregate hourly and weekly output from the full week rows and
+   * update the dashboard view-model in state. Used after delta merges
+   * to refresh the displayed metrics without re-fetching dash metrics.
+   */
+  const reaggregateAndUpdate = useCallback(
+    (currentData, weekRows) => {
+      const weekDates = buildWeekDates(date);
+      const dayBounds = slstDayUtcBounds(date);
+
+      // Filter week rows to the current SLST day for hourly aggregation.
+      const dayRows = weekRows.filter((row) => {
+        const createdAt = row?.created_at;
+        return createdAt >= dayBounds.start && createdAt < dayBounds.end;
+      });
+
+      const hourly = aggregateHourlyOutput(dayRows);
+      const weekly = aggregateWeeklyOutput(weekRows, weekDates);
+      const actualQty = hourly.reduce((sum, h) => sum + h.qty, 0);
+      const plannedQty = currentData?.metrics?.plannedQty ?? 0;
+      const weekPlanQty = currentData?.weekPlanQty ?? 0;
+
+      setData({
+        ...currentData,
+        actualQty,
+        hourly,
+        weekly,
+        progress: plannedQty > 0 ? Math.min(actualQty / plannedQty, 1) : 0,
+        weekAchievement:
+          weekPlanQty > 0
+            ? Math.min(
+                weekly.reduce((sum, w) => sum + w.qty, 0) / weekPlanQty,
+                1
+              )
+            : 0,
+      });
+    },
+    [date]
+  );
+
   const loadDashboard = useCallback(
-    async (dept) => {
+    async (dept, mode = 'full') => {
       if (!dept || !date) return;
+
+      // Delta mode: only fetch newly created scans since our last known timestamp.
+      if (mode === 'delta' && maxCreatedAtRef.current && isFullLoadDoneRef.current) {
+        try {
+          const newRows = await fetchDashboardDelta({
+            departmentId: dept,
+            since: maxCreatedAtRef.current,
+          });
+
+          if (newRows.length === 0) {
+            // No new scans - just update the timestamp display.
+            setLastUpdated(new Date());
+            return;
+          }
+
+          // Merge new rows into our tracked week rows and update max timestamp.
+          allWeekRowsRef.current = [...allWeekRowsRef.current, ...newRows];
+          updateMaxCreatedAt(newRows);
+
+          // Re-aggregate from the merged dataset and update state.
+          const currentData = data;
+          if (currentData) {
+            reaggregateAndUpdate(currentData, allWeekRowsRef.current);
+          }
+          setLastUpdated(new Date());
+        } catch {
+          // Delta fetch failed - fall back to a full reload next tick.
+          isFullLoadDoneRef.current = false;
+        }
+        return;
+      }
+
+      // Full load (initial load, date change, or delta fallback).
       setLoading(true);
       setError(null);
       try {
         const result = await fetchLiveDashboard({ departmentId: dept, date });
         setData(result);
         setLastUpdated(new Date());
+
+        // Store raw week rows and track the latest timestamp for delta fetching.
+        allWeekRowsRef.current = result?._rawWeekRows || [];
+        updateMaxCreatedAt(allWeekRowsRef.current);
+        isFullLoadDoneRef.current = true;
       } catch (err) {
         setError(err?.message || 'Failed to load the live dashboard.');
       } finally {
         setLoading(false);
       }
     },
-    [date]
+    [date, data, updateMaxCreatedAt, reaggregateAndUpdate]
   );
 
   // Resolve which department is on display: explicit filter or the rotation slot
@@ -191,12 +292,23 @@ export default function LiveDashboard() {
     setRotationIndex(0);
   }, [selectedDepartments]);
 
+  // Reset delta tracking when the active department or date changes.
+  // This forces a full reload on the next poll (the useEffect above already
+  // triggers a full load immediately on department/date change).
+  useEffect(() => {
+    allWeekRowsRef.current = [];
+    maxCreatedAtRef.current = null;
+    isFullLoadDoneRef.current = false;
+  }, [activeDepartment, date]);
+
   // Live refresh while visible (factory TVs stay on all day).
+  // Uses delta fetching: only newly created scans since the last poll are
+  // fetched, then merged into the existing dataset client-side.
   useEffect(() => {
     if (!activeDepartment) return undefined;
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') {
-        loadDashboard(activeDepartment);
+        loadDashboard(activeDepartment, 'delta');
       }
     }, LIVE_REFRESH_MS);
     return () => clearInterval(timer);
@@ -907,7 +1019,7 @@ export default function LiveDashboard() {
                 : 'pb-6 text-center text-xs text-slate-400'
             }
           >
-            Live refresh every 30s
+            Live delta refresh every 30s
             {lastUpdated ? ` · last updated ${lastUpdated.toLocaleTimeString()}` : ''}
           </p>
           </div>
