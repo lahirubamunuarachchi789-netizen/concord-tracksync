@@ -120,6 +120,15 @@ export default function DepartmentOutputView() {
       // Compute the full SLST day's UTC bounds [start, end)
       const { start, end } = slstDayUtcBounds(date);
 
+      // DEBUG: Log exact query parameters
+      console.log('[DepartmentOutput] Query params:', {
+        department: departmentId,
+        date,
+        startUtc: start,
+        endUtc: end,
+        qcStatus: 'forward',
+      });
+
       // Query data_updates for the selected department + date, forward-only.
       // The department column stores the department NAME (matching departments.department).
       const { data, error: queryError } = await supabase
@@ -133,8 +142,13 @@ export default function DepartmentOutputView() {
 
       if (queryError) throw queryError;
 
+      // DEBUG: Log raw rows returned
+      console.log('[DepartmentOutput] Rows returned:', data?.length || 0);
+      console.log('[DepartmentOutput] Raw data:', data);
+
       // Handle empty results - no data found for this department/date
       if (!data || data.length === 0) {
+        console.log('[DepartmentOutput] No rows found for query');
         setHourlyData(DEPARTMENT_OUTPUT_HOURS.map((slot) => ({
           ...slot,
           totalOutput: 0,
@@ -156,16 +170,39 @@ export default function DepartmentOutputView() {
         // Convert UTC timestamp to SLST minutes since midnight for bucketing
         const slstMinutes = utcToSlstMinutes(createdAt);
 
+        // DEBUG: Log each row's bucketing details
+        const scanTime = new Date(createdAt);
+        console.log('[DepartmentOutput] Row:', {
+          createdAt,
+          utcHours: scanTime.getUTCHours(),
+          utcMinutes: scanTime.getUTCMinutes(),
+          slstMinutes,
+          count: row?.count,
+          qrCode: row?.qr_code,
+        });
+
+        let assigned = false;
         for (let i = 0; i < slots.length; i += 1) {
           const slotStart = timeToMinutes(slots[i].start);
           const slotEnd = timeToMinutes(slots[i].end);
           if (slstMinutes >= slotStart && slstMinutes < slotEnd) {
             slots[i].totalOutput += Number(row?.count) || 0;
             slots[i].scanCount += 1;
+            console.log(`[DepartmentOutput] -> Assigned to ${slots[i].label} (${slots[i].start}-${slots[i].end}), slotStart=${slotStart}, slotEnd=${slotEnd}`);
+            assigned = true;
             break;
           }
         }
+        if (!assigned) {
+          console.log('[DepartmentOutput] -> NOT assigned to any slot (outside all hour ranges)');
+        }
       }
+
+      // DEBUG: Log final aggregated totals
+      console.log('[DepartmentOutput] Final aggregated totals:');
+      slots.forEach((slot) => {
+        console.log(`  ${slot.label} (${slot.start}-${slot.end}): totalOutput=${slot.totalOutput}, scanCount=${slot.scanCount}`);
+      });
 
       setHourlyData(slots);
     } catch (err) {
