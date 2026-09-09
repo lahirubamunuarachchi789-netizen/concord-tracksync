@@ -928,8 +928,9 @@ test('aggregateDailyOutput builds per-PO status blocks with sub totals and cumul
   assert.equal(result.statusBlocks.length, 2);
   const blockA = result.statusBlocks[0];
   assert.equal(blockA.po, 'PO-A');
-  // One row per SELECTED status, in the selected order.
-  assert.deepEqual(blockA.statuses.map((s) => s.status), ['Forward', 'Return', 'Reworked']);
+  // One row per SELECTED status that has actively populated (non-zero) quantities.
+  // Reworked is omitted for PO-A because it has zero quantities / no data.
+  assert.deepEqual(blockA.statuses.map((s) => s.status), ['Forward', 'Return']);
   const forwardRow = blockA.statuses[0];
   assert.equal(forwardRow.sizes['35'], 2);
   assert.equal(forwardRow.sizes['36'], 1);
@@ -938,13 +939,11 @@ test('aggregateDailyOutput builds per-PO status blocks with sub totals and cumul
   const returnRow = blockA.statuses[1];
   assert.equal(returnRow.sizes['35'], -1);
   assert.equal(returnRow.total, -1);
-  const reworkedRow = blockA.statuses[2];
-  assert.equal(reworkedRow.total, 0); // selected but no data -> zero row
 
-  // Sub Total sums the size columns and totals across the block's rows.
+  // Sub Total sums the size columns and totals across the block's populated rows.
   assert.equal(blockA.subTotal.sizes['35'], 1); // 2 Forward + -1 Return
   assert.equal(blockA.subTotal.sizes['36'], 1);
-  assert.equal(blockA.subTotal.total, 2); // 3 + (-1) + 0
+  assert.equal(blockA.subTotal.total, 2); // 3 + (-1)
   // Cumulative is computed per PO from the cumulative rows.
   assert.equal(blockA.cumulativeOutput, 10);
   // Sub Total equals the PO's plain daily total (single-row matrix).
@@ -956,7 +955,9 @@ test('aggregateDailyOutput builds per-PO status blocks with sub totals and cumul
 
   const blockB = result.statusBlocks[1];
   assert.equal(blockB.po, 'PO-B');
-  assert.equal(blockB.statuses[2].sizes['40'], 3);
+  // Only Reworked has data for PO-B; Forward and Return are omitted (zero quantities).
+  assert.deepEqual(blockB.statuses.map((s) => s.status), ['Reworked']);
+  assert.equal(blockB.statuses[0].sizes['40'], 3);
   assert.equal(blockB.subTotal.total, 3);
   assert.equal(blockB.cumulativeOutput, 0);
 });
@@ -969,9 +970,11 @@ test('aggregateDailyOutput with ALL renders every concrete status plus extras', 
   ];
   const result = aggregateDailyOutput(daily, []); // no statuses -> ALL
   const block = result.statusBlocks[0];
-  // The six concrete statuses (ALL) plus one extra row per unknown label.
+  // Only statuses with actively populated (non-zero) quantities are rendered.
+  // Forward (size 35), (No QC) (size 36) and Legacy Status (size 37) have data;
+  // the other five concrete statuses are omitted (zero quantities / no data).
   assert.deepEqual(block.statuses.map((s) => s.status), [
-    ...DAILY_OUTPUT_QC_STATUSES,
+    'Forward',
     '(No QC)',
     'Legacy Status',
   ]);
@@ -979,7 +982,7 @@ test('aggregateDailyOutput with ALL renders every concrete status plus extras', 
   assert.equal(noQcRow.sizes['36'], 4);
   const legacyRow = block.statuses.find((s) => s.status === 'Legacy Status');
   assert.equal(legacyRow.sizes['37'], 2);
-  // The Sub Total still covers EVERY scan of the PO.
+  // The Sub Total covers every populated scan of the PO.
   assert.equal(block.subTotal.sizes['35'], 1);
   assert.equal(block.subTotal.sizes['36'], 4);
   assert.equal(block.subTotal.sizes['37'], 2);
