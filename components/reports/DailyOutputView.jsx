@@ -7,7 +7,7 @@
 // Output, plus a footer summing every column. Exports produce a native .xlsx
 // via SheetJS (sheetjs/xlsx, lazily imported).
 
-import { useCallback, useEffect, useState } from 'react';
+import { useCallback, useEffect, useRef, useState } from 'react';
 import { ChevronDownIcon, DownloadIcon, FileTextIcon, SpinnerIcon } from '@/components/icons';
 import {
   buildDailyOutputRawXlsx,
@@ -18,9 +18,11 @@ import {
   STANDARD_SIZES,
 } from '@/lib/reportsService';
 // Filter option sets are canonically defined on the DB wrapper; import them
-// directly so the UI consumes a single source of truth.
+// directly so the UI consumes a single source of truth. The QC filter is a
+// MULTI-select: 'ALL' or any combination of Forward / B Grade / C Grade /
+// Lab Testing / Return / Reworked (DAILY_OUTPUT_QC_STATUSES).
 import {
-  DAILY_OUTPUT_QC_OPTIONS,
+  DAILY_OUTPUT_QC_STATUSES,
   DAILY_OUTPUT_RECORD_OPTIONS,
 } from '@/lib/db';
 
@@ -60,7 +62,9 @@ export default function DailyOutputView() {
   const [departmentId, setDepartmentId] = useState('');
   const [date, setDate] = useState('');
   const [recordStatus, setRecordStatus] = useState('ALL');
-  const [qcStatus, setQcStatus] = useState('ALL');
+  // Multi-select QC status filter: ['ALL'] (no status filter) or any
+  // combination of concrete statuses from DAILY_OUTPUT_QC_STATUSES.
+  const [qcStatuses, setQcStatuses] = useState(['ALL']);
   const [matrix, setMatrix] = useState(null);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState(null);
@@ -91,7 +95,7 @@ export default function DailyOutputView() {
         departmentId,
         date,
         recordStatus,
-        qcStatus,
+        qcStatuses,
       });
       setMatrix(result);
     } catch (err) {
@@ -99,7 +103,7 @@ export default function DailyOutputView() {
     } finally {
       setLoading(false);
     }
-  }, [departmentId, date, recordStatus, qcStatus]);
+  }, [departmentId, date, recordStatus, qcStatuses]);
 
   const handleExport = useCallback(async () => {
     if (!date) return;
@@ -112,13 +116,13 @@ export default function DailyOutputView() {
         departmentId,
         date,
         recordStatus,
-        qcStatus,
+        qcStatuses,
       });
       const { buffer, fileName } = await buildDailyOutputRawXlsx(rawRows, {
         departmentId,
         date,
         recordStatus,
-        qcStatus,
+        qcStatus: qcStatuses.includes('ALL') ? 'ALL' : qcStatuses.join(', '),
       });
       downloadXlsx(fileName, buffer);
     } catch (err) {
@@ -126,18 +130,23 @@ export default function DailyOutputView() {
     } finally {
       setExporting(false);
     }
-  }, [departmentId, date, recordStatus, qcStatus]);
+  }, [departmentId, date, recordStatus, qcStatuses]);
 
   const handlePdfExport = useCallback(async () => {
     if (!matrix || !date) return;
     setExportingPdf(true);
     setExportPdfError(null);
     try {
+      // Multi-select travels as a comma-separated qcStatuses parameter;
+      // 'ALL' is passed explicitly so the banner renders 'ALL'.
+      const qcParam = qcStatuses.includes('ALL')
+        ? 'ALL'
+        : qcStatuses.join(',');
       const params = new URLSearchParams({
         departmentId,
         date,
         recordStatus,
-        qcStatus,
+        qcStatuses: qcParam,
       });
       const res = await fetch(`/api/reports/daily-output-pdf?${params.toString()}`);
       if (!res.ok) {
@@ -152,7 +161,7 @@ export default function DailyOutputView() {
     } finally {
       setExportingPdf(false);
     }
-  }, [matrix, departmentId, date, recordStatus, qcStatus]);
+  }, [matrix, departmentId, date, recordStatus, qcStatuses]);
   return (
     <section aria-labelledby="daily-output-heading">
       <h3
@@ -213,22 +222,8 @@ export default function DailyOutputView() {
           <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
         </div>
 
-        {/* QC Status */}
-        <div className="relative min-w-[170px] flex-1">
-          <select
-            value={qcStatus}
-            onChange={(e) => setQcStatus(e.target.value)}
-            aria-label="QC Status"
-            className="w-full appearance-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-sm text-slate-900 shadow-sm focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
-          >
-            {DAILY_OUTPUT_QC_OPTIONS.map((opt) => (
-              <option key={opt} value={opt}>
-                {opt}
-              </option>
-            ))}
-          </select>
-          <ChevronDownIcon className="pointer-events-none absolute right-2 top-1/2 -translate-y-1/2 h-4 w-4 text-slate-400" />
-        </div>
+        {/* QC Status - MULTI-select (ALL or any combination of statuses) */}
+        <QcMultiSelect selected={qcStatuses} onChange={setQcStatuses} />
 
         {/* Search */}
         <button
@@ -321,6 +316,106 @@ export default function DailyOutputView() {
 
       {!loading && matrix && <MatrixTable matrix={matrix} />}
     </section>
+  );
+}
+
+/**
+ * Multi-select QC status dropdown: 'ALL' or any combination of the concrete
+ * statuses (DAILY_OUTPUT_QC_STATUSES). Checking ALL clears the individual
+ * selections; checking any status clears ALL; clearing everything falls
+ * back to ALL. The panel closes on an outside click or Escape.
+ */
+function QcMultiSelect({ selected, onChange }) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef(null);
+
+  // Close on an outside click / Escape so the dropdown never traps the page.
+  useEffect(() => {
+    if (!open) return undefined;
+    function handlePointer(event) {
+      if (rootRef.current && !rootRef.current.contains(event.target)) {
+        setOpen(false);
+      }
+    }
+    function handleKey(event) {
+      if (event.key === 'Escape') setOpen(false);
+    }
+    document.addEventListener('mousedown', handlePointer);
+    document.addEventListener('keydown', handleKey);
+    return () => {
+      document.removeEventListener('mousedown', handlePointer);
+      document.removeEventListener('keydown', handleKey);
+    };
+  }, [open]);
+
+  const allSelected = selected.includes('ALL');
+  const label = allSelected || selected.length === 0 ? 'ALL' : selected.join(', ');
+
+  function toggleOption(option) {
+    if (option === 'ALL') {
+      onChange(['ALL']);
+      return;
+    }
+    const current = allSelected ? [] : [...selected];
+    const next = current.includes(option)
+      ? current.filter((status) => status !== option)
+      : [...current, option].sort(
+          (a, b) =>
+            DAILY_OUTPUT_QC_STATUSES.indexOf(a) -
+            DAILY_OUTPUT_QC_STATUSES.indexOf(b)
+        );
+    onChange(next.length > 0 ? next : ['ALL']);
+  }
+
+  return (
+    <div ref={rootRef} className="relative min-w-[190px] flex-1">
+      <button
+        type="button"
+        onClick={() => setOpen((prev) => !prev)}
+        aria-label="QC Status"
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        className="flex w-full items-center justify-between gap-2 rounded-lg border border-slate-300 bg-white px-3 py-2 text-left text-sm text-slate-900 shadow-sm transition-colors hover:border-blue-400 focus:border-blue-500 focus:outline-none focus:ring-2 focus:ring-blue-500/30"
+      >
+        <span className="truncate" title={label}>
+          {label}
+        </span>
+        <ChevronDownIcon
+          className={`h-4 w-4 shrink-0 text-slate-400 transition-transform ${
+            open ? 'rotate-180' : ''
+          }`}
+        />
+      </button>
+
+      {open && (
+        <div
+          role="listbox"
+          aria-multiselectable="true"
+          className="absolute left-0 right-0 z-40 mt-1 max-h-72 overflow-y-auto rounded-lg border border-slate-200 bg-white py-1 shadow-lg"
+        >
+          {['ALL', ...DAILY_OUTPUT_QC_STATUSES].map((option) => {
+            const checked =
+              option === 'ALL'
+                ? allSelected
+                : !allSelected && selected.includes(option);
+            return (
+              <label
+                key={option}
+                className="flex cursor-pointer items-center gap-2 px-3 py-1.5 text-sm text-slate-800 transition-colors hover:bg-blue-50"
+              >
+                <input
+                  type="checkbox"
+                  checked={checked}
+                  onChange={() => toggleOption(option)}
+                  className="h-4 w-4 rounded border-slate-300 text-blue-600 focus:ring-blue-500"
+                />
+                {option}
+              </label>
+            );
+          })}
+        </div>
+      )}
+    </div>
   );
 }
 

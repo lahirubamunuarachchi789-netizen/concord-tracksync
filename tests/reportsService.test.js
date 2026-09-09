@@ -48,10 +48,12 @@ import {
   buildDailyOutputXlsx,
   buildDailyOutputRawXlsx,
   createDailyOutputFetcher,
+  normalizeQcStatuses,
   DAILY_OUTPUT_COLUMNS,
   DAILY_OUTPUT_RAW_COLUMNS,
   DAILY_OUTPUT_DEPARTMENT_COLUMN,
-  QC_DEFECT_CATEGORIES,
+  DAILY_OUTPUT_QC_STATUSES,
+  DAILY_OUTPUT_NO_QC_LABEL,
   slstDayUtcBounds,
 } from '../lib/reportsService.js';
 
@@ -680,7 +682,7 @@ test('fetchPoRawQrData returns [] for blank PO and for unreachable table', async
  * Daily Output Report — SLST date query, filters, matrix, Excel export
  * ================================================================== */
 
-// Extended mock supabase-js client capturing gte/lt/not in addition to
+// Extended mock supabase-js client capturing gte/lt/not/in in addition to
 // select/order/eq (mirrors the chainable-thenable builder above).
 function createDailyOutputMockSupabase(tables = {}) {
   const queries = [];
@@ -693,6 +695,7 @@ function createDailyOutputMockSupabase(tables = {}) {
       neq(column, value) { record.filters.push(['neq', column, value]); return chain; },
       gte(column, value) { record.filters.push(['gte', column, value]); return chain; },
       lt(column, value) { record.filters.push(['lt', column, value]); return chain; },
+      in(column, values) { record.filters.push(['in', column, values]); return chain; },
       not(column, operator, value) { record.filters.push(['not', column, operator, value]); return chain; },
       order(column, opts) { record.orders.push([column, opts]); return chain; },
       then(onFulfilled, onRejected) {
@@ -716,7 +719,7 @@ const dailyRows = [
   { qr_code: ';mqc1;PO-A;35;scan;', department: 'Lasting 01', record_status: 'IN', qc_status: 'B Grade', count: 1, created_at: '2026-09-04 02:00:00+00' },
 ];
 
-// Pre-filtered subset (Standard QC + within the daily window) that the pure
+// Pre-filtered subset (Forward QC + within the daily window) that the pure
 // aggregateDailyOutput aggregator expects to receive.
 const filteredDailyRows = dailyRows.filter(
   (r) => r.qc_status === 'Forward' && r.created_at < '2026-09-04 18:30:00+00'
@@ -742,7 +745,7 @@ test('Daily Output query applies the SLST date window + department/record/qc fil
     date: '2026-09-04',
     departmentId: 'Lasting 01',
     recordStatus: 'IN',
-    qcStatus: 'Standard',
+    qcStatus: 'Forward',
     cumulative: false,
   });
 
@@ -756,10 +759,13 @@ test('Daily Output query applies the SLST date window + department/record/qc fil
   assert.ok(codes.includes('lt:created_at'), 'must filter lt created_at (SLST end)');
   assert.equal(q.filters.find((f) => f[0] === 'eq' && f[1] === DAILY_OUTPUT_DEPARTMENT_COLUMN)?.[2], 'Lasting 01');
   assert.equal(q.filters.find((f) => f[0] === 'eq' && f[1] === 'record_status')?.[2], 'IN');
-  // 'Standard' is translated to a NOT-IN of the defect categories.
-  const notFilter = q.filters.find((f) => f[0] === 'not' && f[1] === 'qc_status');
-  assert.ok(notFilter, 'Standard qcStatus must become a NOT-in filter');
-  assert.deepEqual(notFilter[3], QC_DEFECT_CATEGORIES);
+  // 'Forward' (renamed from the old 'Standard' option) is a real stored
+  // status, so it filters by equality like every other concrete status.
+  const qcEq = q.filters.find((f) => f[0] === 'eq' && f[1] === 'qc_status');
+  assert.ok(qcEq, 'Forward qcStatus must become an eq filter');
+  assert.equal(qcEq[2], 'Forward');
+  // The old 'Standard' negation is gone - no NOT-IN filter is emitted.
+  assert.equal(q.filters.find((f) => f[0] === 'not' && f[1] === 'qc_status'), undefined);
 });
 
 test('Daily Output query translates an explicit qcStatus (B Grade) via eq', async () => {
@@ -768,6 +774,37 @@ test('Daily Output query translates an explicit qcStatus (B Grade) via eq', asyn
   await fetchRows({ date: '2026-09-04', qcStatus: 'B Grade' });
   const qcEq = queries[0].filters.find((f) => f[0] === 'eq' && f[1] === 'qc_status');
   assert.equal(qcEq?.[2], 'B Grade');
+});
+
+test('Daily Output query accepts the multi-select qcStatuses list via in', async () => {
+  const { client, queries } = createDailyOutputMockSupabase({ data_updates: { data: [], error: null } });
+  const fetchRows = createDailyOutputFetcher(client);
+  await fetchRows({
+    date: '2026-09-04',
+    qcStatuses: ['Forward', 'Return', 'Reworked'],
+  });
+  const qcIn = queries[0].filters.find((f) => f[0] === 'in' && f[1] === 'qc_status');
+  assert.ok(qcIn, 'multiple qcStatuses must become an in filter');
+  assert.deepEqual(qcIn[2], ['Forward', 'Return', 'Reworked']);
+  // A single-status array is still a plain eq (same semantics as before).
+  const single = createDailyOutputMockSupabase({ data_updates: { data: [], error: null } });
+  await createDailyOutputFetcher(single.client)({ date: '2026-09-04', qcStatuses: ['Return'] });
+  const qcEq = single.queries[0].filters.find((f) => f[0] === 'eq' && f[1] === 'qc_status');
+  assert.equal(qcEq?.[2], 'Return');
+});
+
+test('Daily Output query applies NO qc filter for ALL / empty selections', async () => {
+  for (const selection of [{ qcStatus: 'ALL' }, { qcStatuses: ['ALL'] }, { qcStatuses: [] }, {}]) {
+    const { client, queries } = createDailyOutputMockSupabase({
+      data_updates: { data: [], error: null },
+    });
+    await createDailyOutputFetcher(client)({ date: '2026-09-04', ...selection });
+    assert.equal(
+      queries[0].filters.find((f) => f[1] === 'qc_status'),
+      undefined,
+      JSON.stringify(selection)
+    );
+  }
 });
 
 test('Daily Output query applies record_status OUT and the cumulative (no gte) window', async () => {
@@ -838,6 +875,129 @@ test('aggregateDailyOutput ignores rows outside the 35-50 size range and unparse
   assert.equal(result.rows[0].sizes['42'], 2);
   assert.equal(result.rows[0].dailyTotal, 2);
   assert.equal(result.summary.dailyTotal, 2);
+});
+
+/* ---------- Daily Output QC status selection normalizer --------------- */
+
+test('normalizeQcStatuses resolves multi-select / single / ALL selections', () => {
+  assert.deepEqual(normalizeQcStatuses({ qcStatuses: ['Forward', 'Return'] }), ['Forward', 'Return']);
+  // Trim + de-duplicate, preserving first-seen order.
+  assert.deepEqual(normalizeQcStatuses({ qcStatuses: [' Return ', 'Forward', 'Return'] }), ['Return', 'Forward']);
+  // Legacy single string still works.
+  assert.deepEqual(normalizeQcStatuses({ qcStatus: 'B Grade' }), ['B Grade']);
+  // ALL variants and empty selections -> no filter.
+  assert.deepEqual(normalizeQcStatuses({ qcStatuses: ['ALL'] }), []);
+  assert.deepEqual(normalizeQcStatuses({ qcStatus: 'ALL' }), []);
+  assert.deepEqual(normalizeQcStatuses({ qcStatuses: [] }), []);
+  assert.deepEqual(normalizeQcStatuses({}), []);
+  // Unknown values (incl. the retired 'Standard') are dropped; dropping
+  // everything resolves to ALL.
+  assert.deepEqual(normalizeQcStatuses({ qcStatus: 'Standard' }), []);
+  assert.deepEqual(normalizeQcStatuses({ qcStatuses: ['Nope', 'Return'] }), ['Return']);
+  // The array wins when both shapes are provided.
+  assert.deepEqual(
+    normalizeQcStatuses({ qcStatus: 'B Grade', qcStatuses: ['Reworked'] }),
+    ['Reworked']
+  );
+  // The concrete status list behind ALL covers the six stored statuses.
+  assert.deepEqual(DAILY_OUTPUT_QC_STATUSES, [
+    'Forward',
+    'B Grade',
+    'C Grade',
+    'Lab Testing',
+    'Return',
+    'Reworked',
+  ]);
+  assert.equal(DAILY_OUTPUT_NO_QC_LABEL, '(No QC)');
+});
+
+/* ---------- Daily Output status rows / Sub Total blocks --------------- */
+
+test('aggregateDailyOutput builds per-PO status blocks with sub totals and cumulative', () => {
+  const daily = [
+    { qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Forward', count: 2 },
+    { qr_code: ';mqc1;PO-A;36;scan;', qc_status: 'Forward', count: 1 },
+    { qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Return', count: -1 },
+    { qr_code: ';mqc1;PO-B;40;scan;', qc_status: 'Reworked', count: 3 },
+  ];
+  const cumulative = [{ qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Forward', count: 10 }];
+  const result = aggregateDailyOutput(daily, cumulative, STANDARD_SIZES, {
+    statuses: ['Forward', 'Return', 'Reworked'],
+  });
+
+  assert.equal(result.statusBlocks.length, 2);
+  const blockA = result.statusBlocks[0];
+  assert.equal(blockA.po, 'PO-A');
+  // One row per SELECTED status, in the selected order.
+  assert.deepEqual(blockA.statuses.map((s) => s.status), ['Forward', 'Return', 'Reworked']);
+  const forwardRow = blockA.statuses[0];
+  assert.equal(forwardRow.sizes['35'], 2);
+  assert.equal(forwardRow.sizes['36'], 1);
+  assert.equal(forwardRow.sizes['37'], 0);
+  assert.equal(forwardRow.total, 3);
+  const returnRow = blockA.statuses[1];
+  assert.equal(returnRow.sizes['35'], -1);
+  assert.equal(returnRow.total, -1);
+  const reworkedRow = blockA.statuses[2];
+  assert.equal(reworkedRow.total, 0); // selected but no data -> zero row
+
+  // Sub Total sums the size columns and totals across the block's rows.
+  assert.equal(blockA.subTotal.sizes['35'], 1); // 2 Forward + -1 Return
+  assert.equal(blockA.subTotal.sizes['36'], 1);
+  assert.equal(blockA.subTotal.total, 2); // 3 + (-1) + 0
+  // Cumulative is computed per PO from the cumulative rows.
+  assert.equal(blockA.cumulativeOutput, 10);
+  // Sub Total equals the PO's plain daily total (single-row matrix).
+  const rowA = result.rows.find((r) => r.po === 'PO-A');
+  assert.equal(blockA.subTotal.total, rowA.dailyTotal);
+  for (const size of STANDARD_SIZES) {
+    assert.equal(blockA.subTotal.sizes[size], rowA.sizes[size]);
+  }
+
+  const blockB = result.statusBlocks[1];
+  assert.equal(blockB.po, 'PO-B');
+  assert.equal(blockB.statuses[2].sizes['40'], 3);
+  assert.equal(blockB.subTotal.total, 3);
+  assert.equal(blockB.cumulativeOutput, 0);
+});
+
+test('aggregateDailyOutput with ALL renders every concrete status plus extras', () => {
+  const daily = [
+    { qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Forward', count: 1 },
+    { qr_code: ';mqc1;PO-A;36;scan;', qc_status: null, count: 4 }, // blank -> "(No QC)"
+    { qr_code: ';mqc1;PO-A;37;scan;', qc_status: 'Legacy Status', count: 2 }, // unknown
+  ];
+  const result = aggregateDailyOutput(daily, []); // no statuses -> ALL
+  const block = result.statusBlocks[0];
+  // The six concrete statuses (ALL) plus one extra row per unknown label.
+  assert.deepEqual(block.statuses.map((s) => s.status), [
+    ...DAILY_OUTPUT_QC_STATUSES,
+    '(No QC)',
+    'Legacy Status',
+  ]);
+  const noQcRow = block.statuses.find((s) => s.status === DAILY_OUTPUT_NO_QC_LABEL);
+  assert.equal(noQcRow.sizes['36'], 4);
+  const legacyRow = block.statuses.find((s) => s.status === 'Legacy Status');
+  assert.equal(legacyRow.sizes['37'], 2);
+  // The Sub Total still covers EVERY scan of the PO.
+  assert.equal(block.subTotal.sizes['35'], 1);
+  assert.equal(block.subTotal.sizes['36'], 4);
+  assert.equal(block.subTotal.sizes['37'], 2);
+  assert.equal(block.subTotal.total, 7);
+  assert.equal(block.subTotal.total, result.rows[0].dailyTotal);
+});
+
+test('aggregateDailyOutput keeps rows and summary intact alongside statusBlocks', () => {
+  const daily = [{ qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Forward', count: 2 }];
+  const result = aggregateDailyOutput(daily, []);
+  assert.equal(result.rows.length, 1);
+  assert.equal(result.rows[0].dailyTotal, 2);
+  assert.equal(result.summary.dailyTotal, 2);
+  assert.equal(result.summary.sizes['35'], 2);
+  // The block (legacy call: ALL) matches the row totals.
+  const block = result.statusBlocks[0];
+  assert.equal(block.subTotal.total, 2);
+  assert.equal(block.cumulativeOutput, 0);
 });
 
 test('buildDailyOutputXlsx produces a valid .xlsx buffer with the matrix layout', async () => {
@@ -971,6 +1131,8 @@ test('buildDailyOutputRawXlsx writes raw records with SLST timestamps', async ()
 });
 
 test('buildDailyOutputPdf produces a valid PDF buffer with the matrix layout', async () => {
+  // Legacy-shaped matrix WITHOUT statusBlocks: the PDF builder falls back to
+  // a single 'ALL' status row per PO, so every classic assertion still holds.
   const matrix = {
     sizes: STANDARD_SIZES,
     rows: [
@@ -1013,4 +1175,86 @@ test('buildDailyOutputPdf produces a valid PDF buffer with the matrix layout', a
   assert.ok(text.includes('Prepared By'));
   assert.ok(text.includes('Approved By'));
   assert.ok(text.includes('-'));
+});
+
+test('buildDailyOutputPdf renders status rows, sub totals and the new column order', async () => {
+  // Real pipeline: aggregate with selected statuses, then render the PDF.
+  const daily = [
+    { qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Forward', count: 2 },
+    { qr_code: ';mqc1;PO-A;36;scan;', qc_status: 'Forward', count: 1 },
+    { qr_code: ';mqc1;PO-A;35;scan;', qc_status: 'Return', count: -1 },
+    { qr_code: ';mqc1;PO-B;40;scan;', qc_status: 'Reworked', count: 3 },
+  ];
+  const matrix = aggregateDailyOutput(daily, [], STANDARD_SIZES, {
+    statuses: ['Forward', 'Return', 'Reworked'],
+  });
+
+  const { buffer, fileName } = await buildDailyOutputPdf(matrix, {
+    departmentId: 'Lasting 01',
+    date: '2026-09-04',
+    recordStatus: 'ALL',
+    qcStatuses: ['Forward', 'Return', 'Reworked'],
+  });
+
+  assert.equal(fileName, 'Daily_Output_Report_2026-09-04.pdf');
+  assert.equal(buffer.subarray(0, 5).toString('latin1'), '%PDF-');
+
+  const raw = buffer.toString('latin1');
+  const text = decodePdfText(raw);
+
+  // Column order: PO | Status | sizes | Total | Cumulative.
+  assert.ok(text.includes('PO'), 'header must include the PO column');
+  assert.ok(text.includes('Status'), 'header must include the Status column');
+  assert.ok(text.includes('Total'), 'header must include the Total column');
+  assert.ok(text.includes('Cumulative'), 'header must include the Cumulative column');
+  // Banner shows the joined multi-select.
+  assert.ok(text.includes('QC Status: Forward, Return, Reworked'));
+  // One row per selected status per PO.
+  assert.ok(text.includes('Forward'));
+  assert.ok(text.includes('Return'));
+  assert.ok(text.includes('Reworked'));
+  // A highlighted Sub Total row closes every PO block (2 POs -> 2 rows).
+  assert.equal((text.match(/Sub Total/g) || []).length, 2);
+  // Grand TOTAL footer row.
+  assert.ok(text.includes('TOTAL'));
+});
+
+test('buildDailyOutputPdf paginates the status grid across multiple pages', async () => {
+  // 40 POs x (1 Forward row + Sub Total) = 80 data rows -> several pages.
+  const sizeList = STANDARD_SIZES;
+  const blocks = Array.from({ length: 40 }, (_, i) => {
+    const po = `PO-${String(i + 1).padStart(3, '0')}`;
+    const sizes = {};
+    for (const s of sizeList) sizes[s] = 0;
+    sizes['35'] = 1;
+    return {
+      po,
+      statuses: [{ status: 'Forward', sizes, total: 1 }],
+      subTotal: { sizes, total: 1 },
+      cumulativeOutput: 2,
+    };
+  });
+  const summary = { sizes: {}, dailyTotal: 40, cumulativeOutput: 80 };
+  for (const s of sizeList) summary.sizes[s] = s === '35' ? 40 : 0;
+  const matrix = { sizes: sizeList, rows: [], statusBlocks: blocks, summary };
+
+  const { buffer } = await buildDailyOutputPdf(matrix, {
+    departmentId: 'Lasting 01',
+    date: '2026-09-04',
+    recordStatus: 'ALL',
+    qcStatus: 'Forward',
+  });
+
+  assert.equal(buffer.subarray(0, 5).toString('latin1'), '%PDF-');
+  const tail = buffer.subarray(buffer.length - 16).toString('latin1');
+  assert.ok(tail.includes('%%EOF'), 'PDF buffer should end with %%EOF');
+
+  const raw = buffer.toString('latin1');
+  // One '/Type /Page' object per page (the /Pages node does not match \b).
+  const pageObjects = (raw.match(/\/Type\s*\/Page\b/g) || []).length;
+  assert.ok(pageObjects >= 2, `expected the table to span multiple pages, got ${pageObjects}`);
+  // The repeated header appears on every page.
+  const text = decodePdfText(raw);
+  assert.ok(text.includes('Cumulative'));
+  assert.ok((text.match(/Sub Total/g) || []).length === 40);
 });

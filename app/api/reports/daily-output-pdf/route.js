@@ -1,13 +1,18 @@
 // Concord TrackSync - Daily Output Report PDF API route.
 //
-// Accepts query parameters (departmentId, date, recordStatus, qcStatus), fetches
-// the daily output matrix via the shared reportsService, builds a professional
-// PDF (pdfkit) and returns it as a downloadable application/pdf response.
+// Accepts query parameters (departmentId, date, recordStatus, qcStatus,
+// qcStatuses), fetches the daily output matrix via the shared reportsService,
+// builds a professional PDF (pdfkit) and returns it as a downloadable
+// application/pdf response. `qcStatuses` carries the multi-select QC status
+// list (comma-separated); the legacy single `qcStatus` is still accepted.
 
 import { NextResponse } from 'next/server';
 // Server-only imports: reportsService (DB access + aggregation) and the
 // pdfkit-based PDF builder must run in the Node.js runtime on the server.
-import { fetchDailyOutputReport } from '@/lib/reportsService';
+import {
+  fetchDailyOutputReport,
+  normalizeQcStatuses,
+} from '@/lib/reportsService';
 import { buildDailyOutputPdf } from '@/lib/pdfReportService';
 
 export const dynamic = 'force-dynamic';
@@ -21,6 +26,15 @@ export async function GET(request) {
   const date = searchParams.get('date') || '';
   const recordStatus = searchParams.get('recordStatus') || 'ALL';
   const qcStatus = searchParams.get('qcStatus') || 'ALL';
+  // Multi-select: a comma-separated QC status list, e.g. qcStatuses=Forward,Return.
+  const qcStatusesParam = (searchParams.get('qcStatuses') || '')
+    .split(',')
+    .map((status) => status.trim())
+    .filter(Boolean);
+  // Resolve to the concrete status list ([] = ALL) shared by the queries,
+  // the aggregation and the PDF banner.
+  const qcStatuses = normalizeQcStatuses({ qcStatus, qcStatuses: qcStatusesParam });
+  const qcLabel = qcStatuses.length > 0 ? qcStatuses.join(', ') : 'ALL';
 
   if (!date) {
     return NextResponse.json(
@@ -34,13 +48,14 @@ export async function GET(request) {
       departmentId,
       date,
       recordStatus,
-      qcStatus,
+      qcStatuses,
     });
     const { buffer, fileName } = await buildDailyOutputPdf(matrix, {
       departmentId,
       date,
       recordStatus,
-      qcStatus,
+      qcStatuses,
+      qcStatus: qcLabel,
     });
 
     return new NextResponse(buffer, {
