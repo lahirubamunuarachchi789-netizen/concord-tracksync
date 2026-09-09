@@ -46,6 +46,21 @@ function timeToMinutes(hhmm) {
   return h * 60 + m;
 }
 
+/**
+ * Convert a UTC timestamp to SLST minutes since midnight.
+ * SLST = UTC + 5:30 (330 minutes). The result is normalized to 0-1439
+ * (minutes within a single SLST day) using modulo 1440.
+ *
+ * @param {string} utcIso ISO UTC timestamp from data_updates.created_at
+ * @returns {number} minutes since SLST midnight (0-1439)
+ */
+function utcToSlstMinutes(utcIso) {
+  const scanTime = new Date(utcIso);
+  const utcMinutes = scanTime.getUTCHours() * 60 + scanTime.getUTCMinutes();
+  // Add 330 minutes (5h 30m) to convert UTC -> SLST, then wrap to 0-1439
+  return (utcMinutes + 330) % 1440;
+}
+
 /** Build the UTC ISO bounds for one SLST hour slot on a given SLST date. */
 function hourSlotUtcBounds(date, startHHmm, endHHmm) {
   const { start } = slstDayUtcBounds(date);
@@ -118,15 +133,13 @@ export default function DepartmentOutputView() {
         const createdAt = row?.created_at;
         if (!createdAt) continue;
 
-        const scanTime = new Date(createdAt);
-        const scanMinutes = scanTime.getUTCHours() * 60 + scanTime.getUTCMinutes();
-        const slstMinutes = scanMinutes + 330;
-        const normalizedMinutes = slstMinutes % 1440;
+        // Convert UTC timestamp to SLST minutes since midnight for bucketing
+        const slstMinutes = utcToSlstMinutes(createdAt);
 
         for (let i = 0; i < slots.length; i += 1) {
           const slotStart = timeToMinutes(slots[i].start);
           const slotEnd = timeToMinutes(slots[i].end);
-          if (normalizedMinutes >= slotStart && normalizedMinutes < slotEnd) {
+          if (slstMinutes >= slotStart && slstMinutes < slotEnd) {
             slots[i].totalOutput += Number(row?.count) || 0;
             slots[i].scanCount += 1;
             break;
