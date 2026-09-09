@@ -15,8 +15,6 @@ import {
 } from '@/lib/reportsService';
 
 const DEPARTMENT_METRIC_ROWS = [
-  { key: 'in', label: 'IN' },
-  { key: 'out', label: 'OUT' },
   { key: 'forward', label: 'Forward' },
   { key: 'return', label: 'Return' },
   { key: 'reworked', label: 'Reworked' },
