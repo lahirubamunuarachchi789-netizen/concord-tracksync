@@ -183,4 +183,14 @@ create policy "tracksync_msk_delete"
 --    queue, so a queued scan can never be written twice.
 --  * If the browser is offline the scan is queued in localStorage
 --    and synced automatically once connectivity returns.
+--  * QR BAN MANAGEMENT: the "QR status search & ban" panel on the QR
+--    Activation tab queries msk by msk_qr (searchMskQr) and updates
+--    msk.status -> 'ban' for the found record (banMskQr, VERIFIED via
+--    UPDATE ... RETURNING id). A banned QR is then rejected by every
+--    entry path: the standard transaction guards (validateStandardScan
+--    - both the scanned msk_qr mode and the Packing single-scan
+--    lookup mode, which verifies the resolved org_qr's msk status
+--    directly) and the activation gate (checkActivationMskStatus),
+--    plus the offline queue flushes. No DDL change is required - the
+--    status column and the msk UPDATE policy above cover the feature.
 -- ============================================================

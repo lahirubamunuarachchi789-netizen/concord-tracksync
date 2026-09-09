@@ -34,6 +34,7 @@ import StatusControls from '../StatusControls';
 import ManualDateTimeSection from '../ManualDateTimeSection';
 import ActivationSummary from './ActivationSummary';
 import PoSelect from './PoSelect';
+import QrBanManager from './QrBanManager';
 import SizeSelect from './SizeSelect';
 import {
   buildQrCode,
@@ -514,15 +515,15 @@ export default function QrActivationView() {
 
   async function handleRetrySync() {
     setSyncing(true);
-    const { flushed, skipped } = await refresh();
+    const { flushed, skipped, banned } = await refresh();
     setSyncing(false);
     notify(
       'success',
       'Sync complete',
-      flushed > 0 || skipped > 0
+      flushed > 0 || skipped > 0 || banned > 0
         ? `${flushed} queued activation(s) uploaded to Supabase${
             skipped > 0 ? `, ${skipped} duplicate(s) skipped` : ''
-          }.`
+          }${banned > 0 ? `, ${banned} banned QR(s) rejected` : ''}.`
         : 'All activations are already up to date.'
     );
   }
@@ -693,6 +694,11 @@ export default function QrActivationView() {
               </>
             )}
           </div>
+
+          {/* QR status search & ban: look up an MSK QR (msk_qr), show its
+              PO / size / style details when active and ban it on demand.
+              A banned QR is rejected by both transaction flows. */}
+          <QrBanManager notify={notify} />
         </div>
 
         {/* Right: preview + summary + log */}

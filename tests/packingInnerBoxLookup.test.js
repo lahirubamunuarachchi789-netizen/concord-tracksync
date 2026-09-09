@@ -113,9 +113,11 @@ function createFakeGuardDb({
   departments = DEPARTMENTS,
   counts = {},
   innerExists = true,
+  bannedStatuses = {},
 } = {}) {
   const calls = {
     mskLookups: [],
+    mskOrgQrStatusLookups: [],
     departmentFetches: 0,
     netCountQueries: [],
     srlLookups: [],
@@ -126,6 +128,12 @@ function createFakeGuardDb({
     async listMskRowsByMskQr(mskQr) {
       calls.mskLookups.push(mskQr);
       return [];
+    },
+    async listMskStatusesByOrgQr(orgQr) {
+      // Ban Guard adapter stub (Packing lookup mode): no org_qr is
+      // banned unless the test configures `bannedStatuses`.
+      calls.mskOrgQrStatusLookups.push(orgQr);
+      return bannedStatuses[orgQr] || [];
     },
     async listDepartments() {
       calls.departmentFetches += 1;

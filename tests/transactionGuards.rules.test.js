@@ -57,6 +57,7 @@ function mskRow(status = 'Active', orgQr = 'ORG-001') {
 /** In-memory fake of the guard db adapter, recording every query. */
 function createFakeDb({
   mskRows = {},
+  mskStatusesByOrgQr = {},
   departments = DEPARTMENTS,
   counts = {},
   failMsk = false,
@@ -67,6 +68,7 @@ function createFakeDb({
 } = {}) {
   const calls = {
     mskLookups: [],
+    mskOrgQrStatusLookups: [],
     departmentFetches: 0,
     netCountQueries: [],
     cutQtyQueries: [],
@@ -78,6 +80,11 @@ function createFakeDb({
       calls.mskLookups.push(mskQr);
       if (failMsk) throw new Error('fetch failed');
       return mskRows[mskQr] || [];
+    },
+    async listMskStatusesByOrgQr(orgQr) {
+      calls.mskOrgQrStatusLookups.push(orgQr);
+      if (failMsk) throw new Error('fetch failed');
+      return mskStatusesByOrgQr[orgQr] || [];
     },
     async listDepartments() {
       calls.departmentFetches += 1;
