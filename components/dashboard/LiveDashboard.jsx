@@ -19,6 +19,7 @@ import {
   CompressIcon,
   ExpandIcon,
   LayersIcon,
+  PlayIcon,
   SpinnerIcon,
   TrendingUpIcon,
 } from '@/components/icons';
@@ -122,6 +123,7 @@ export default function LiveDashboard() {
   const [showAllShifts, setShowAllShifts] = useState(false);
   const [selectedDepartments, setSelectedDepartments] = useState([]);
   const [showDeptSettings, setShowDeptSettings] = useState(false);
+  const [isPlaying, setIsPlaying] = useState(false);
   const dateTouched = useRef(false);
 
   // Delta-fetch tracking: store all loaded week rows and the latest timestamp
@@ -272,9 +274,10 @@ export default function LiveDashboard() {
       : '');
 
   // (Re)load whenever the active department or date changes.
+  // Only auto-loads when the user has pressed Play (isPlaying === true).
   useEffect(() => {
-    if (activeDepartment) loadDashboard(activeDepartment);
-  }, [activeDepartment, loadDashboard]);
+    if (activeDepartment && isPlaying) loadDashboard(activeDepartment);
+  }, [activeDepartment, loadDashboard, isPlaying]);
 
   // Auto-rotation: advance the slot every 15s only in the unfiltered state,
   // cycling through the user's selected departments.
@@ -304,14 +307,28 @@ export default function LiveDashboard() {
   // Live refresh while visible (factory TVs stay on all day).
   // Uses delta fetching: only newly created scans since the last poll are
   // fetched, then merged into the existing dataset client-side.
+  // Only polls when the user has pressed Play (isPlaying === true).
   useEffect(() => {
-    if (!activeDepartment) return undefined;
+    if (!activeDepartment || !isPlaying) return undefined;
     const timer = setInterval(() => {
       if (document.visibilityState === 'visible') {
         loadDashboard(activeDepartment, 'delta');
       }
     }, LIVE_REFRESH_MS);
     return () => clearInterval(timer);
+  }, [activeDepartment, loadDashboard, isPlaying]);
+
+  // Handle Play button click: trigger initial full load and start polling.
+  const handlePlay = useCallback(() => {
+    setIsPlaying(true);
+    // Reset delta tracking so the next load is a full fetch.
+    allWeekRowsRef.current = [];
+    maxCreatedAtRef.current = null;
+    isFullLoadDoneRef.current = false;
+    // Trigger immediate full load.
+    if (activeDepartment) {
+      loadDashboard(activeDepartment, 'full');
+    }
   }, [activeDepartment, loadDashboard]);
 
   // Full-screen TV mode: request browser fullscreen + toggle body.tv-mode
@@ -411,6 +428,53 @@ export default function LiveDashboard() {
       plannedHours: data.plannedHours,
     });
   }, [data, slstNow]);
+
+  // Play placeholder: shown until the user explicitly clicks Play. This
+  // prevents unwanted Supabase egress from auto-loading the live dashboard.
+  if (!isPlaying) {
+    return (
+      <div className="mx-auto flex min-h-[60vh] max-w-2xl animate-fade-slide items-center justify-center px-6 py-12">
+        <div className="play-placeholder flex flex-col items-center text-center">
+          {/* Animated ring around the play icon */}
+          <div className="relative mb-8">
+            <div className="play-ring absolute inset-0 rounded-full border-2 border-dashed border-indigo-300/50" />
+            <button
+              type="button"
+              onClick={handlePlay}
+              className="play-button relative flex h-28 w-28 items-center justify-center rounded-full bg-gradient-to-br from-indigo-500 via-purple-500 to-pink-500 text-white shadow-2xl shadow-indigo-500/30 transition hover:brightness-110 focus:outline-none focus-visible:ring-4 focus-visible:ring-indigo-400/50"
+              aria-label="Play - Load Live Dashboard"
+            >
+              <PlayIcon className="ml-1 h-12 w-12" />
+            </button>
+          </div>
+
+          <h2 className="mb-2 text-2xl font-extrabold text-slate-900">
+            Live Dashboard
+          </h2>
+          <p className="mb-6 max-w-sm text-sm text-slate-500">
+            Real-time factory production metrics with delta fetching for minimal
+            database egress. Click Play to start the live feed.
+          </p>
+
+          {/* Feature hints */}
+          <div className="flex flex-wrap items-center justify-center gap-3 text-xs text-slate-400">
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-emerald-400" />
+              Delta refresh every 30s
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-indigo-400" />
+              Auto-rotation ready
+            </span>
+            <span className="inline-flex items-center gap-1.5 rounded-full bg-slate-100 px-3 py-1.5">
+              <span className="h-1.5 w-1.5 rounded-full bg-amber-400" />
+              TV mode available
+            </span>
+          </div>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

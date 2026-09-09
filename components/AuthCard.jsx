@@ -57,7 +57,7 @@ export default function AuthCard() {
 
   // Already signed in? Skip the login screen entirely.
   useEffect(() => {
-    if (getSession()) router.replace('/dashboard');
+    if (getSession()) router.replace('/home');
   }, [router]);
 
   const notify = useCallback((type, title, message = '') => {
@@ -92,11 +92,11 @@ export default function AuthCard() {
       notify(
         'success',
         'Login successful',
-        `Welcome back, ${result.user.username}! Taking you to your dashboard...`
+        `Welcome back, ${result.user.username}! Taking you to your home...`
       );
       setPassword('');
       // Brief pause so the success state is visible, then enter the shell.
-      setTimeout(() => router.push('/dashboard'), 700);
+      setTimeout(() => router.push('/home'), 700);
     } else {
       notify('error', 'Login failed', result.message);
     }
