@@ -64,7 +64,8 @@ import { buildDailyOutputPdf } from '../lib/pdfReportService.js';
 
 test('emptyMetrics returns a zeroed metrics bucket', () => {
   assert.deepEqual(emptyMetrics(), {
-    in: 0, out: 0, bGrade: 0, cGrade: 0, labTesting: 0, outTotal: 0,
+    in: 0, out: 0, forward: 0, return: 0, reworked: 0,
+    bGrade: 0, cGrade: 0, labTesting: 0, outTotal: 0,
   });
 });
 

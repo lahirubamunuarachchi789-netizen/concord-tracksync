@@ -17,6 +17,9 @@ import {
 const DEPARTMENT_METRIC_ROWS = [
   { key: 'in', label: 'IN' },
   { key: 'out', label: 'OUT' },
+  { key: 'forward', label: 'Forward' },
+  { key: 'return', label: 'Return' },
+  { key: 'reworked', label: 'Reworked' },
   { key: 'bGrade', label: 'B Grade' },
   { key: 'cGrade', label: 'C Grade' },
   { key: 'labTesting', label: 'Lab Testing' },
@@ -265,8 +268,9 @@ function CutRow({ row, columns }) {
   );
 }
 
-/** One department section: header band + metric rows. */
+/** One department section: header band + metric rows + WIP. */
 function DepartmentSection({ row, columns, isFirst }) {
+  const hasWip = row.wip && Object.keys(row.wip).length > 0;
   return (
     <>
       <tr className={isFirst ? '' : 'border-t-2 border-slate-400'}>
@@ -305,6 +309,30 @@ function DepartmentSection({ row, columns, isFirst }) {
           })}
         </tr>
       ))}
+      {hasWip && (
+        <tr className="bg-indigo-50/50">
+          <th
+            scope="row"
+            className="sticky left-0 z-10 border-b border-r border-slate-100 px-4 py-1.5 text-left text-[11px] font-medium bg-indigo-100/80 font-bold text-indigo-900"
+          >
+            WIP {row.wipFromSequence ? `from ${row.wipFromSequence}` : ''}
+          </th>
+          {columns.map((col) => {
+            const isTotal = col === TOTAL_KEY;
+            const value = isTotal ? row.wipTotal : (row.wip?.[col] ?? 0);
+            const base = 'border-b border-slate-100 px-2 py-1.5 text-center';
+            const weight = isTotal ? 'bg-indigo-200/70 font-bold' : 'bg-indigo-50 font-semibold';
+            return (
+              <td
+                key={col}
+                className={`${base} ${weight} text-indigo-800`}
+              >
+                {value}
+              </td>
+            );
+          })}
+        </tr>
+      )}
     </>
   );
 }
@@ -317,6 +345,12 @@ function metricRowClass(key) {
       return 'bg-emerald-50/50';
     case 'balanceToCut':
       return 'bg-amber-50';
+    case 'forward':
+      return 'bg-blue-50/30';
+    case 'return':
+      return 'bg-yellow-50/30';
+    case 'reworked':
+      return 'bg-teal-50/30';
     case 'bGrade':
       return 'bg-orange-50/30';
     case 'cGrade':
@@ -351,6 +385,9 @@ function metricCellClass(key, value, isTotal) {
   }
 
   const weight = isTotal ? 'bg-slate-50 font-bold text-slate-800' : 'font-medium text-slate-700';
+  if (key === 'forward') return `${base} ${weight} text-blue-700`;
+  if (key === 'return') return `${base} ${weight} text-yellow-700`;
+  if (key === 'reworked') return `${base} ${weight} text-teal-700`;
   if (key === 'bGrade') return `${base} ${weight} text-orange-700`;
   if (key === 'cGrade') return `${base} ${weight} text-rose-700`;
   if (key === 'labTesting') return `${base} ${weight} text-violet-700`;
